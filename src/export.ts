@@ -35,6 +35,19 @@ function flattenTaskLists(root: HTMLElement): void {
     box?.remove();
     li.insertBefore(document.createTextNode(done ? '☑ ' : '☐ '), li.firstChild);
   });
+
+  /* 한글 renders these list items hanging past the left page margin
+     (verified against a real paste), so the list wrapper goes away
+     entirely — plain paragraphs survive every importer. */
+  root.querySelectorAll('.task-list').forEach((list) => {
+    const lines: HTMLElement[] = [];
+    list.querySelectorAll(':scope > li').forEach((li) => {
+      const p = document.createElement('p');
+      while (li.firstChild) p.appendChild(li.firstChild);
+      lines.push(p);
+    });
+    list.replaceWith(...lines);
+  });
 }
 
 /** The frontmatter card is a CSS grid; without the stylesheet its keys
@@ -61,7 +74,9 @@ function tablesForWordProcessors(root: HTMLElement): void {
     table.setAttribute('border', '1');
     table.setAttribute('cellpadding', '6');
     table.setAttribute('cellspacing', '0');
-    table.setAttribute('width', '100%');
+    /* No width attribute on purpose: `width="100%"` made 한글 size the
+       table past its page margins, shoving the first column and the
+       following content off the printable area. */
   });
 
   for (const dir of ['left', 'center', 'right'] as const) {
@@ -104,6 +119,39 @@ async function inlineImages(root: HTMLElement): Promise<void> {
   );
 }
 
+/* Verified against real pastes: 한글 honours `align` but not much
+   else; Word drops `align`, `<s>` and the monospace mapping. Neither
+   loads a stylesheet, so both halves ship — legacy attributes for
+   한글, inline styles for Word. The styles are injected into the
+   *serialized string*, which is the one place CSP cannot object to
+   them (writing the same styles onto live nodes is blocked by our
+   own `style-src`). */
+const MONO_STYLE = "font-family:'Courier New',monospace";
+
+function injectStyles(html: string): string {
+  return (
+    html
+      .replace(
+        /<(td|th) align="(left|center|right)">/g,
+        '<$1 align="$2" style="text-align:$2">',
+      )
+      .replace(/<s>/g, '<s style="text-decoration:line-through">')
+      .replace(
+        /<blockquote>/g,
+        '<blockquote style="border-left:3px solid #d0d7de;margin-left:0;padding-left:12px;color:#57606a">',
+      )
+      /* <pre> first, so its inner <code> gains a style attribute and
+         the bare-`<code>` pass below no longer matches it. */
+      .replace(
+        /<pre(?=[\s>])/g,
+        `<pre style="${MONO_STYLE};background:#f6f8fa;border:1px solid #d0d7de;padding:10px"`,
+      )
+      .replace(/(<pre[^>]*>)<code>/g, `$1<code style="${MONO_STYLE}">`)
+      .replace(/<code>/g, `<code style="${MONO_STYLE};background:#f2f3f5;padding:0 3px">`)
+      .replace(/<hr>/g, '<hr style="border:0;border-top:1px solid #d0d7de">')
+  );
+}
+
 async function buildRichHtml(source: HTMLElement): Promise<string> {
   const clone = source.cloneNode(true) as HTMLElement;
   stripChrome(clone);
@@ -115,7 +163,7 @@ async function buildRichHtml(source: HTMLElement): Promise<string> {
 
   /* The wrapper's style is assembled as text and never applied to a
      live node, so CSP never sees it. */
-  return `<meta charset="utf-8"><div style="${BODY_STYLE}">${clone.innerHTML}</div>`;
+  return `<meta charset="utf-8"><div style="${BODY_STYLE}">${injectStyles(clone.innerHTML)}</div>`;
 }
 
 export type CopyResult = 'rich' | 'plain' | 'failed';

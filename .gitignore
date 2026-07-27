@@ -6,3 +6,7 @@ dist
 
 # NHN 사이트 캡처 — 참고용 저작물이라 공개 저장소에 넣지 않는다
 docs/design-reference/
+
+# 손 테스트 산출물 (한글·워드 붙여넣기 결과)
+docs/*.docx
+docs/*.pdf
