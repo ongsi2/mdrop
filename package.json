@@ -1,0 +1,24 @@
+{
+  "name": "mdview",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Drop a .md file, read it. No install, no license, no app.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "dompurify": "^3.4.12",
+    "highlight.js": "^11.11.1",
+    "markdown-it": "^14.3.0",
+    "markdown-it-anchor": "^9.2.1",
+    "markdown-it-footnote": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "^14.1.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.5"
+  }
+}

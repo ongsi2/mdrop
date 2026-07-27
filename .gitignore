@@ -1,0 +1,8 @@
+node_modules
+dist
+.vercel
+.DS_Store
+*.local
+
+# NHN 사이트 캡처 — 참고용 저작물이라 공개 저장소에 넣지 않는다
+docs/design-reference/

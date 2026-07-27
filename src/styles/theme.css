@@ -1,0 +1,122 @@
+/* ──────────────────────────────────────────────────────────────
+   Design tokens absorbed from nan2026.nhn.com (NHN GAME x AI).
+   The signature is a *purple-shifted* black ladder — not neutral
+   grey — with a six-step text ramp, hairline rules, and mint as
+   the single interactive colour.
+   ────────────────────────────────────────────────────────────── */
+
+:root {
+  /* surface ladder */
+  --void: #0a0b0f;
+  --base: #0b0b16;
+  --elevated: #101020;
+  --surface: #17152a;
+  --overlay: #1e1b3a;
+  --panel: #12131a;
+
+  /* text ramp */
+  --tx-hi: #eceef4;
+  --tx-mid: #b5b8cc;
+  --tx-mut: #9094ad;
+  --tx-dim: #6b6f87;
+  --tx-faint: #4a4d62;
+  --tx-off: #363849;
+  --tx-inverse: #0a0b0f;
+
+  /* rules */
+  --line: #252736;
+  --line-2: #363849;
+  --line-3: #4a4d62;
+
+  /* interactive */
+  --mint: #4df5ed;
+  --mint-hi: #b3fffc;
+  --mint-lo: #22e5dc;
+  --purple: #9353ff;
+
+  /* accents */
+  --orange: #ff7100;
+  --sky: #1cc8ff;
+  --cyan: #00b5be;
+  --gold: #ffd452;
+  --error: #ef4444;
+  --success: #22c55e;
+
+  /* type */
+  --font-kr: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont,
+    'Apple SD Gothic Neo', system-ui, sans-serif;
+  --font-display: 'Oswald', 'Pretendard Variable', system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
+    'D2Coding', 'Liberation Mono', monospace;
+
+  /* rhythm */
+  --gut: 20px;
+  --maxw: 1720px;
+  --readw: 74ch;
+  --topbar-h: 56px;
+
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-full: 9999px;
+
+  /* texture intensity — the site runs these very low on purpose */
+  --scan-opacity: 0.04;
+  --noise-opacity: 0.03;
+  --glow: 1;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur: 0.15s;
+
+  color-scheme: dark;
+}
+
+/* Light theme keeps the same structural language: same rules, same
+   mint interactive, same hairlines — only the ladder inverts. Long
+   reading sessions and printing need it. */
+[data-theme='light'] {
+  --void: #ffffff;
+  --base: #fbfbfd;
+  --elevated: #ffffff;
+  --surface: #f4f4f8;
+  --overlay: #ecedf3;
+  --panel: #ffffff;
+
+  --tx-hi: #14151c;
+  --tx-mid: #3a3d4d;
+  --tx-mut: #5a5e73;
+  --tx-dim: #767a90;
+  --tx-faint: #9296ac;
+  --tx-off: #c3c6d4;
+  --tx-inverse: #ffffff;
+
+  --line: #e4e5ec;
+  --line-2: #d2d4de;
+  --line-3: #b8bbc9;
+
+  --mint: #009e96;
+  --mint-hi: #007d77;
+  --mint-lo: #00b3aa;
+  --sky: #0284c7;
+  --orange: #d95a00;
+  --gold: #b07d00;
+
+  --scan-opacity: 0;
+  --noise-opacity: 0;
+  --glow: 0;
+
+  color-scheme: light;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur: 0.001s;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001s !important;
+  }
+}

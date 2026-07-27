@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0b0b16" />
+    <title>없는 페이지 · Not found — MDVIEW</title>
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;700&display=swap"
+    />
+    <style>
+      * {
+        margin: 0;
+        box-sizing: border-box;
+      }
+      body {
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: #0b0b16;
+        color: #eceef4;
+        font-family: 'Pretendard Variable', Pretendard, system-ui, sans-serif;
+        text-align: center;
+        position: relative;
+        overflow-x: hidden;
+      }
+      .glow {
+        position: fixed;
+        left: 50%;
+        top: -22vh;
+        translate: -50% 0;
+        width: min(1200px, 120vw);
+        height: 46vh;
+        filter: blur(90px);
+        background: radial-gradient(
+          ellipse 60% 100% at 50% 100%,
+          rgba(28, 200, 255, 0.22),
+          transparent 70%
+        );
+        pointer-events: none;
+      }
+      .box {
+        position: relative;
+        max-width: 460px;
+      }
+      .mark {
+        font-family: 'Oswald', sans-serif;
+        font-weight: 700;
+        font-size: 19px;
+        letter-spacing: 0.02em;
+        margin-bottom: 40px;
+      }
+      .mark span {
+        color: #4df5ed;
+      }
+      .code {
+        font-family: 'Oswald', sans-serif;
+        font-size: 84px;
+        font-weight: 600;
+        line-height: 1;
+        letter-spacing: 0.04em;
+        background: linear-gradient(100deg, #ff7100 8%, #ffd452 42%, #1cc8ff 92%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      h1 {
+        margin: 20px 0 0;
+        font-size: 21px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        word-break: keep-all;
+      }
+      .en {
+        margin-top: 6px;
+        font-size: 15px;
+        font-weight: 500;
+        color: #b5b8cc;
+      }
+      p {
+        margin: 18px 0 0;
+        font-size: 13.5px;
+        line-height: 1.8;
+        color: #9094ad;
+        word-break: keep-all;
+      }
+      .links {
+        display: flex;
+        justify-content: center;
+        gap: 8px;
+        margin-top: 32px;
+      }
+      a.btn {
+        padding: 9px 18px;
+        border-radius: 999px;
+        border: 1px solid #363849;
+        color: #b5b8cc;
+        font-size: 13px;
+        font-weight: 600;
+        text-decoration: none;
+        transition: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      a.btn:hover {
+        border-color: #4a4d62;
+        color: #eceef4;
+      }
+      a.btn.primary {
+        background: #eceef4;
+        border-color: #eceef4;
+        color: #0a0b0f;
+      }
+      a.btn.primary:hover {
+        background: #fff;
+        border-color: #fff;
+        color: #000;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="glow"></div>
+    <div class="box">
+      <div class="mark">MD<span>VIEW</span></div>
+      <div class="code">404</div>
+      <h1>이 주소에는 아무것도 없습니다</h1>
+      <p class="en">There is nothing at this address.</p>
+      <p>
+        마크다운을 읽으러 오셨다면 첫 화면에서 <b>.md</b> 파일을 끌어다 놓으시면 됩니다.<br />
+        Drop a <b>.md</b> file on the home page to read it.
+      </p>
+      <div class="links">
+        <a class="btn primary" href="/">첫 화면</a>
+        <a class="btn" href="/en/">English</a>
+      </div>
+    </div>
+    <script>
+      // A dropped file must not navigate this page away to its raw
+      // source. Stash it and let the reader on the home page render it.
+      // (Standalone page — keys mirror src/files.ts stashHandoff.)
+      addEventListener('dragover', (e) => {
+        if (e.dataTransfer && e.dataTransfer.types.includes('Files')) e.preventDefault();
+      });
+      addEventListener('drop', async (e) => {
+        if (!e.dataTransfer || !e.dataTransfer.files.length) return;
+        e.preventDefault();
+        const file = [...e.dataTransfer.files].find((f) =>
+          /\.(md|markdown|mdown|mkd|mdwn)$/i.test(f.name),
+        );
+        if (!file || file.size > 4 * 1024 * 1024) return;
+        try {
+          sessionStorage.setItem('mdview:handoff', await file.text());
+          sessionStorage.setItem('mdview:handoff-name', file.name);
+          location.href = '/';
+        } catch {}
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="ko" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#0b0b16" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+
+    <title>md 파일 더블클릭으로 여는 법 — 연결 프로그램 설정 | MDVIEW</title>
+    <meta
+      name="description"
+      content="탐색기에서 .md 파일을 더블클릭하면 바로 읽히도록 설정하는 방법. 내려받을 설치 파일 없이 Chrome·Edge 에서 앱으로 설치하고 md 기본 프로그램으로 지정하는 4단계를 안내합니다."
+    />
+    <meta
+      name="keywords"
+      content="md 파일 기본 프로그램, md 파일 연결 프로그램, 마크다운 더블클릭, md 파일 여는 프로그램, md 파일 연결 프로그램 변경, 마크다운 뷰어 설치"
+    />
+    <meta name="naver-site-verification" content="a7e9fa180b56f321e7a9ce72e95a98de0e4fb9c9" />
+    <link rel="canonical" href="https://mdrop.app/install/" />
+    <link rel="alternate" hreflang="ko" href="https://mdrop.app/install/" />
+    <link rel="alternate" hreflang="en" href="https://mdrop.app/en/install/" />
+    <link rel="alternate" hreflang="x-default" href="https://mdrop.app/en/install/" />
+
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="MDVIEW" />
+    <meta property="og:locale" content="ko_KR" />
+    <meta property="og:url" content="https://mdrop.app/install/" />
+    <meta property="og:title" content="md 파일 더블클릭으로 여는 법" />
+    <meta
+      property="og:description"
+      content="내려받을 설치 파일 없이, .md 파일의 기본 프로그램을 MDVIEW 로 지정하는 4단계."
+    />
+    <meta property="og:image" content="https://mdrop.app/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Oswald:wght@300;400;500;600;700&display=swap"
+    />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "HowTo",
+        "name": "md 파일을 더블클릭해서 바로 여는 법",
+        "inLanguage": "ko",
+        "description": "MDVIEW 를 앱으로 설치하고 .md 파일의 기본 프로그램으로 지정하는 방법.",
+        "totalTime": "PT2M",
+        "tool": [{ "@type": "HowToTool", "name": "Chrome 또는 Edge 브라우저" }],
+        "step": [
+          {
+            "@type": "HowToStep",
+            "position": 1,
+            "name": "Chrome 또는 Edge 로 접속",
+            "text": "mdrop.app 을 Chrome 이나 Edge 에서 엽니다. Firefox 와 Safari 는 파일 연결 기능을 지원하지 않습니다.",
+            "url": "https://mdrop.app/install/#step-1"
+          },
+          {
+            "@type": "HowToStep",
+            "position": 2,
+            "name": "앱으로 설치",
+            "text": "상단의 앱으로 설치 버튼을 누릅니다. 주소창 오른쪽의 설치 아이콘을 눌러도 됩니다. 내려받는 설치 파일은 없습니다.",
+            "url": "https://mdrop.app/install/#step-2"
+          },
+          {
+            "@type": "HowToStep",
+            "position": 3,
+            "name": "md 파일의 연결 프로그램 변경",
+            "text": "탐색기에서 아무 .md 파일을 우클릭하고 연결 프로그램, 다른 앱 선택, MDVIEW 를 고른 뒤 항상 이 앱을 사용을 체크합니다.",
+            "url": "https://mdrop.app/install/#step-3"
+          },
+          {
+            "@type": "HowToStep",
+            "position": 4,
+            "name": "첫 실행 권한 허용",
+            "text": "처음 여는 순간 브라우저가 MDVIEW 에서 .md 파일을 열도록 허용할지 한 번 묻습니다. 허용하면 끝입니다.",
+            "url": "https://mdrop.app/install/#step-4"
+          }
+        ]
+      }
+    </script>
+  </head>
+  <body>
+    <a class="skip" href="#guide">본문으로 건너뛰기</a>
+    <div class="fx" aria-hidden="true">
+      <div class="fx-glow fx-glow--top"></div>
+      <div class="fx-glow fx-glow--bottom"></div>
+      <div class="fx-scan"></div>
+      <div class="fx-noise"></div>
+    </div>
+
+    <header class="topbar">
+      <a class="wordmark" href="/" title="MDVIEW">
+        <span class="wordmark__m">MD</span><span class="wordmark__v">VIEW</span>
+      </a>
+      <nav class="topbar__actions">
+        <a class="langlink" id="lang-link" href="/en/install/" hreflang="en" lang="en">EN</a>
+        <button class="btn btn--ghost" id="btn-theme" type="button" title="테마 전환">
+          <span id="theme-label">DARK</span>
+        </button>
+        <a class="btn btn--solid" href="/">파일 열기</a>
+      </nav>
+    </header>
+
+    <main class="stage">
+      <article class="guide" id="guide">
+        <p class="hero__eyebrow">SETUP GUIDE</p>
+        <h1 class="guide__title">
+          <code>.md</code> 파일을 더블클릭해서<br />바로 여는 법
+        </h1>
+        <p class="guide__lead">
+          마크다운을 열 때마다 브라우저를 켜고 파일을 끌어다 놓는 게 번거롭다면, MDVIEW 를 앱으로
+          설치해 <b>.md 파일의 기본 프로그램</b>으로 지정할 수 있습니다.
+          <b>내려받을 설치 파일은 없습니다</b> — 브라우저가 직접 등록합니다. 2분이면 끝납니다.
+        </p>
+
+        <!-- 방문자 상태에 따라 하나만 보인다 -->
+        <div class="callout" id="state-ready" hidden>
+          <p class="callout__title">이 브라우저에서 바로 설치할 수 있습니다</p>
+          <button class="btn btn--mint" id="btn-install" type="button">앱으로 설치</button>
+        </div>
+        <div class="callout callout--ok" id="state-installed" hidden>
+          <p class="callout__title">이미 설치되어 있습니다</p>
+          <p class="callout__body">아래 3단계만 하시면 더블클릭으로 열립니다.</p>
+        </div>
+        <div class="callout callout--warn" id="state-manual" hidden>
+          <p class="callout__title">설치 버튼이 여기 안 보이나요?</p>
+          <p class="callout__body">
+            브라우저는 아무 때나 설치 버튼을 내주지 않습니다. <b>주소창 오른쪽 끝의 설치
+            아이콘</b>을 누르거나, 브라우저 메뉴 <b>⋮ → 캐스트·저장·공유 → 페이지를 앱으로 설치</b>
+            로 바로 설치하실 수 있습니다. Firefox 와 Safari 에는 이 기능이 없습니다.
+          </p>
+        </div>
+
+        <ol class="steps">
+          <li class="step" id="step-1">
+            <span class="step__idx">01</span>
+            <div class="step__body">
+              <h2 class="step__title">Chrome 또는 Edge 로 엽니다</h2>
+              <p class="step__text">
+                파일 연결은 Chromium 계열 데스크톱 브라우저에만 있는 기능입니다. Firefox 와 Safari
+                에서는 이 단계부터 진행되지 않습니다. 다만 <b>파일을 끌어다 놓아 읽는 것</b>은 어느
+                브라우저에서나 됩니다.
+              </p>
+            </div>
+          </li>
+
+          <li class="step" id="step-2">
+            <span class="step__idx">02</span>
+            <div class="step__body">
+              <h2 class="step__title">앱으로 설치합니다</h2>
+              <p class="step__text">
+                상단 <b>앱으로 설치</b> 버튼을 누릅니다. 버튼이 보이지 않으면 주소창 오른쪽 끝의
+                설치 아이콘을 누르거나, 브라우저 메뉴 <b>⋮ → 캐스트·저장·공유 → 페이지를 앱으로
+                설치</b> 를 고르시면 됩니다.
+              </p>
+              <p class="step__note">
+                설치해도 내려받는 파일은 없습니다. 브라우저가 바로 등록하고, 작업표시줄과 시작
+                메뉴에 아이콘이 생깁니다.
+              </p>
+            </div>
+          </li>
+
+          <li class="step" id="step-3">
+            <span class="step__idx">03</span>
+            <div class="step__body">
+              <h2 class="step__title">
+                <code>.md</code> 의 연결 프로그램을 MDVIEW 로 바꿉니다
+              </h2>
+              <p class="step__text">
+                여기가 유일하게 손이 가는 단계입니다. 탐색기에서 아무 <code>.md</code> 파일을
+                고르고:
+              </p>
+              <p class="step__path">
+                <b>우클릭</b> <span>→</span> <b>연결 프로그램</b> <span>→</span>
+                <b>다른 앱 선택</b> <span>→</span> <b>MDVIEW</b> <span>→</span>
+                <b>항상 이 앱을 사용</b> 체크
+              </p>
+              <p class="step__note">
+                Windows 11 에서는 <b>연결 프로그램 → 다른 앱 선택</b> 대신
+                <b>연결 프로그램 → 다른 앱 선택 → 항상</b> 순서로 나오기도 합니다. 목록에 MDVIEW 가
+                없다면 <b>내 PC 에서 앱 선택</b> 을 눌러 찾으시면 됩니다.
+              </p>
+            </div>
+          </li>
+
+          <li class="step" id="step-4">
+            <span class="step__idx">04</span>
+            <div class="step__body">
+              <h2 class="step__title">첫 실행 때 권한을 허용합니다</h2>
+              <p class="step__text">
+                처음 여는 순간 브라우저가
+                <b>“MDVIEW 에서 .md 파일을 열도록 허용할까요?”</b> 를 한 번 묻습니다. 허용하면
+                그다음부터는 묻지 않습니다.
+              </p>
+            </div>
+          </li>
+        </ol>
+
+        <section class="guide__section">
+          <h2 class="about__h">확인해보기</h2>
+          <p class="about__p">
+            탐색기에서 아무 <code>.md</code> 파일을 더블클릭해 보세요. 브라우저 주소창도 탭도 없는
+            독립 창에 렌더된 문서가 뜨면 성공입니다.
+          </p>
+
+          <h2 class="about__h">지우고 싶으면</h2>
+          <p class="about__p">
+            앱 창의 <b>⋮ → MDVIEW 제거</b>, 또는 Windows <b>설정 → 앱</b> 에서 제거하면 끝입니다.
+            일반 프로그램이 아니라 브라우저가 등록한 앱이라 언인스톨러도, 레지스트리 잔여물도
+            없습니다. 연결 프로그램은 다시 원하는 앱으로 지정하시면 됩니다.
+          </p>
+
+          <h2 class="about__h">macOS 와 Linux 에서도 되나요</h2>
+          <p class="about__p">
+            됩니다. Chrome 이나 Edge 로 설치한 뒤 파일을 우클릭해 기본 앱을 MDVIEW 로 지정하는 방식은
+            같습니다. 메뉴 이름만 <b>정보 가져오기 → 다음으로 열기</b> 처럼 달라집니다.
+          </p>
+
+          <h2 class="about__h">회사 컴퓨터에서도 되나요</h2>
+          <p class="about__p">
+            보통은 됩니다. 관리자 권한이 필요 없고 설치 파일을 받지도 않기 때문입니다. 다만 조직에서
+            정책으로 웹 앱 설치를 막아둔 경우에는 설치 버튼이 나타나지 않습니다. 그럴 때는 그냥
+            사이트에 파일을 끌어다 놓아 쓰시면 됩니다.
+          </p>
+
+          <h2 class="about__h">인터넷이 끊겨도 열리나요</h2>
+          <p class="about__p">
+            열립니다. 설치하면 앱이 브라우저에 저장돼서 네트워크 없이도 동작합니다. 애초에 파일을
+            서버로 보내지 않기 때문에 인터넷이 필요한 부분이 없습니다.
+          </p>
+        </section>
+
+        <p class="hero__foot">
+          설정이 끝나면 <a href="/">첫 화면</a>은 이제 필요 없습니다. 파일을 더블클릭하시면 됩니다.
+        </p>
+      </article>
+    </main>
+
+    <script type="module" src="/src/install.ts"></script>
+  </body>
+</html>
