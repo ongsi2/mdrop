@@ -921,10 +921,13 @@ kbd {
 /* Solid mint on purpose — the earlier glassy dark pill disappeared
    into the dark background, and a confirmation nobody notices might
    as well not exist. */
+/* Just under the top bar, where every button that triggers a toast
+   lives — feedback belongs next to the action, not a full screen
+   away at the bottom edge. */
 .toast {
   position: fixed;
   left: 50%;
-  bottom: 28px;
+  top: calc(var(--topbar-h) + 14px);
   translate: -50% 0;
   z-index: 95;
   max-width: min(520px, calc(100vw - 32px));
@@ -974,7 +977,7 @@ kbd {
 @keyframes rise {
   from {
     opacity: 0;
-    translate: -50% 8px;
+    translate: -50% -8px;
   }
 }
 
