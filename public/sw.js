@@ -4,10 +4,10 @@
    changes them at the same URL, so they always go to the network
    first and fall back to the cache only when offline. Bump CACHE
    whenever the hand-made images in /public change. */
-/* v6: og.png and shot-narrow.png re-rendered with the new hero line —
-   they sit in the immutable cache-first set, so the name must change
-   for anyone to see the new pixels. */
-const CACHE = 'mdview-v6';
+/* og.png and shot-narrow.png sit in the immutable cache-first set, so
+   the name must change whenever they are re-rendered. v7: hero line
+   became 던지고, 읽으세요. */
+const CACHE = 'mdview-v7';
 const SHELL = ['/', '/en/', '/install/', '/en/install/'];
 
 /* Content-addressed or hand-versioned: safe to serve from cache. */
