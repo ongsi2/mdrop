@@ -918,6 +918,9 @@ kbd {
 }
 
 /* ── toast ─────────────────────────────────────────────────── */
+/* Solid mint on purpose — the earlier glassy dark pill disappeared
+   into the dark background, and a confirmation nobody notices might
+   as well not exist. */
 .toast {
   position: fixed;
   left: 50%;
@@ -925,35 +928,48 @@ kbd {
   translate: -50% 0;
   z-index: 95;
   max-width: min(520px, calc(100vw - 32px));
-  padding: 10px 18px;
+  padding: 11px 20px;
   border-radius: var(--r-full);
-  border: 1px solid var(--line-2);
-  background: color-mix(in srgb, var(--overlay) 92%, transparent);
-  backdrop-filter: blur(12px);
-  color: var(--tx-mid);
+  border: 0;
+  background: var(--mint);
+  color: var(--tx-inverse);
   font-size: 13px;
+  font-weight: 700;
   text-align: center;
-  box-shadow: 0 16px 40px -20px #000;
+  box-shadow:
+    0 10px 34px -10px color-mix(in srgb, var(--mint) 65%, transparent),
+    0 16px 40px -20px #000;
   animation: rise 0.2s var(--ease);
 }
+/* Light theme's mint is paler; one step deeper keeps white text
+   readable. */
+[data-theme='light'] .toast {
+  background: var(--mint-hi);
+  color: #fff;
+}
 .toast[data-kind='error'] {
-  border-color: color-mix(in srgb, var(--error) 55%, transparent);
-  color: color-mix(in srgb, var(--error) 75%, var(--tx-hi));
+  background: color-mix(in srgb, var(--error) 82%, #000);
+  color: #fff;
+  box-shadow:
+    0 10px 34px -10px color-mix(in srgb, var(--error) 55%, transparent),
+    0 16px 40px -20px #000;
 }
 .toast__action {
   margin-left: 12px;
-  padding: 3px 12px;
-  border: 1px solid color-mix(in srgb, var(--mint) 45%, transparent);
+  padding: 4px 13px;
+  border: 0;
   border-radius: var(--r-full);
-  background: color-mix(in srgb, var(--mint) 12%, transparent);
+  background: var(--tx-inverse);
   color: var(--mint);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
+}
+[data-theme='light'] .toast__action {
+  background: #fff;
 }
 .toast__action:hover {
   color: var(--mint-hi);
-  border-color: var(--mint);
 }
 @keyframes rise {
   from {

@@ -26,6 +26,29 @@ function stripChrome(root: HTMLElement): void {
   root.querySelectorAll('[id]').forEach((el) => el.removeAttribute('id'));
 }
 
+/** Copies inline content only — block children (the <p> a loose list
+    item wraps its text in, nested lists) are unwrapped in place.
+    A block element inside a generated paragraph gets hoisted out by
+    the receiving parser, which is exactly how 한글 ended up with the
+    ☑ symbol stranded on its own line at the page margin. */
+function appendInline(source: ChildNode, target: HTMLElement): void {
+  for (const node of Array.from(source.childNodes)) {
+    const unwrap =
+      node instanceof HTMLElement &&
+      (/^(P|DIV|UL|OL|LI)$/.test(node.tagName) ||
+        /* The task-item content sits in an inline <span> wrapper, and
+           in a loose list that span *contains* the block <p> — so the
+           test has to be "holds a block", not "is a block". */
+        node.querySelector('p, div, ul, ol, li') !== null);
+    if (unwrap) {
+      appendInline(node, target);
+      target.appendChild(document.createTextNode(' '));
+    } else {
+      target.appendChild(node.cloneNode(true));
+    }
+  }
+}
+
 /** A disabled checkbox pastes as an empty box or vanishes entirely;
     a literal symbol always survives. */
 function flattenTaskLists(root: HTMLElement): void {
@@ -36,17 +59,30 @@ function flattenTaskLists(root: HTMLElement): void {
     li.insertBefore(document.createTextNode(done ? '☑ ' : '☐ '), li.firstChild);
   });
 
-  /* 한글 renders these list items hanging past the left page margin
-     (verified against a real paste), so the list wrapper goes away
-     entirely — plain paragraphs survive every importer. */
+  /* Task items leave the list and become flat paragraphs — 한글
+     renders them hanging past the page margin otherwise. A list can
+     mix task items with ordinary bulleted ones, so it is split into
+     segments in order: ordinary items keep a real list (and their
+     bullets), task items come out as paragraphs between them. */
   root.querySelectorAll('.task-list').forEach((list) => {
-    const lines: HTMLElement[] = [];
-    list.querySelectorAll(':scope > li').forEach((li) => {
-      const p = document.createElement('p');
-      while (li.firstChild) p.appendChild(li.firstChild);
-      lines.push(p);
-    });
-    list.replaceWith(...lines);
+    const replacement = document.createDocumentFragment();
+    let segment: HTMLElement | null = null;
+
+    for (const item of Array.from(list.children)) {
+      if (item.classList.contains('task-item')) {
+        segment = null;
+        const line = document.createElement('p');
+        appendInline(item, line);
+        replacement.appendChild(line);
+      } else {
+        if (!segment) {
+          segment = document.createElement(list.tagName.toLowerCase());
+          replacement.appendChild(segment);
+        }
+        segment.appendChild(item.cloneNode(true));
+      }
+    }
+    list.replaceWith(replacement);
   });
 }
 
@@ -147,7 +183,15 @@ function injectStyles(html: string): string {
         `<pre style="${MONO_STYLE};background:#f6f8fa;border:1px solid #d0d7de;padding:10px"`,
       )
       .replace(/(<pre[^>]*>)<code>/g, `$1<code style="${MONO_STYLE}">`)
-      .replace(/<code>/g, `<code style="${MONO_STYLE};background:#f2f3f5;padding:0 3px">`)
+      /* Inline code additionally wraps its text in a legacy <font>
+         tag — 한글 ignores font-family in a style attribute here but
+         still honours the attribute it has known since the 90s.
+         Inline code contains only escaped text, so the content
+         capture cannot cross tags. */
+      .replace(
+        /<code>([^<]*)<\/code>/g,
+        `<code style="${MONO_STYLE};background:#f2f3f5;padding:0 3px"><font face="Courier New">$1</font></code>`,
+      )
       .replace(/<hr>/g, '<hr style="border:0;border-top:1px solid #d0d7de">')
   );
 }
