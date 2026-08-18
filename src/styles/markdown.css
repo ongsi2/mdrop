@@ -54,6 +54,8 @@
   font-weight: 700;
   line-height: 1.32;
   letter-spacing: -0.022em;
+  min-width: 0;
+  overflow-wrap: anywhere;
   scroll-margin-top: calc(var(--topbar-h) + 20px);
   position: relative;
 }
@@ -101,11 +103,17 @@
 h1:hover .anchor,
 h2:hover .anchor,
 h3:hover .anchor,
-h4:hover .anchor {
+h4:hover .anchor,
+h5:hover .anchor,
+h6:hover .anchor,
+.anchor:focus-visible {
   opacity: 1;
 }
 .anchor:hover {
   color: var(--mint);
+}
+.anchor:focus-visible {
+  color: var(--mint-hi);
 }
 
 /* prose */

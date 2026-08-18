@@ -8,6 +8,8 @@ export type RecentEntry = {
   key: string;
   name: string;
   handle: FileSystemFileHandle;
+  /** Directory the markdown file is relative to, retained for local images. */
+  dir?: FileSystemDirectoryHandle;
   at: number;
 };
 
@@ -28,7 +30,11 @@ function open(): Promise<IDBDatabase> {
         req.result.createObjectStore(STORE, { keyPath: 'key' });
       }
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      const db = req.result;
+      db.onversionchange = () => db.close();
+      resolve(db);
+    };
     req.onerror = () => reject(req.error);
   });
 }
@@ -37,9 +43,27 @@ function tx<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequ
   return open().then(
     (db) =>
       new Promise<T>((resolve, reject) => {
-        const request = run(db.transaction(STORE, mode).objectStore(STORE));
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
+        const transaction = db.transaction(STORE, mode);
+        let request: IDBRequest<T>;
+        let result: T;
+        try {
+          request = run(transaction.objectStore(STORE));
+        } catch (error) {
+          db.close();
+          reject(error);
+          return;
+        }
+        request.onsuccess = () => {
+          result = request.result;
+        };
+        transaction.oncomplete = () => {
+          db.close();
+          resolve(result);
+        };
+        transaction.onabort = () => {
+          db.close();
+          reject(transaction.error ?? request.error ?? new Error('IndexedDB transaction aborted'));
+        };
       }),
   );
 }
@@ -54,20 +78,28 @@ export async function list(): Promise<RecentEntry[]> {
   }
 }
 
-export async function remember(name: string, handle: FileSystemFileHandle): Promise<void> {
+export async function remember(
+  name: string,
+  handle: FileSystemFileHandle,
+  dir?: FileSystemDirectoryHandle,
+): Promise<void> {
   if (!canRemember()) return;
   try {
     /* Same file reopened later should move up, not duplicate. The
        handle itself is the identity the browser understands, so
        compare against what is already stored. */
     const existing = await list();
+    let rememberedDir = dir;
     for (const entry of existing) {
       if (await entry.handle.isSameEntry(handle).catch(() => false)) {
+        rememberedDir ??= entry.dir;
         await tx('readwrite', (s) => s.delete(entry.key));
       }
     }
     const key = `${name}:${Date.now()}`;
-    await tx('readwrite', (s) => s.put({ key, name, handle, at: Date.now() }));
+    await tx('readwrite', (s) =>
+      s.put({ key, name, handle, dir: rememberedDir, at: Date.now() }),
+    );
 
     const kept = await list();
     const stale = (await tx<RecentEntry[]>('readonly', (s) => s.getAll())).filter(
@@ -99,8 +131,8 @@ export async function clear(): Promise<void> {
 
 /** Permission lapses between sessions, and re-requesting it needs a
     user gesture — so this must be called straight from a click. */
-export async function ensureReadable(handle: FileSystemFileHandle): Promise<boolean> {
-  const withPerms = handle as FileSystemFileHandle & {
+export async function ensureReadable(handle: FileSystemHandle): Promise<boolean> {
+  const withPerms = handle as FileSystemHandle & {
     queryPermission?: (d: { mode: string }) => Promise<PermissionState>;
     requestPermission?: (d: { mode: string }) => Promise<PermissionState>;
   };

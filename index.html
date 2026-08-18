@@ -89,58 +89,34 @@
         "mainEntity": [
           {
             "@type": "Question",
-            "name": "md 파일은 무엇으로 여나요?",
+            "name": "파일이 서버로 전송되나요?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "메모장으로 열면 # 이나 ** 같은 기호가 그대로 보입니다. 보기 좋게 읽으려면 마크다운 뷰어(md 리더기)가 필요한데, MDVIEW 는 설치 없이 브라우저에서 바로 렌더링합니다."
+              "text": "아니요. 업로드 경로가 없으며 파싱과 렌더링은 브라우저 안에서 끝납니다. 페이지가 열린 뒤에는 네트워크 연결 없이도 동작합니다."
             }
           },
           {
             "@type": "Question",
-            "name": "프로그램 설치 없이 마크다운을 볼 수 있나요?",
+            "name": "어떤 마크다운 문법을 지원하나요?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "네. 브라우저만 있으면 됩니다. 회원가입도 로그인도 없고, 파일을 창에 끌어다 놓는 즉시 렌더링됩니다."
+              "text": "표와 정렬, 체크리스트, 각주, 접이식 블록, 프론트매터, 코드 문법 강조를 지원합니다. 긴 문서에는 목차가 자동으로 생깁니다."
             }
           },
           {
             "@type": "Question",
-            "name": "파일이 서버에 올라가나요?",
+            "name": "문서를 복사하거나 PDF로 저장할 수 있나요?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "올라가지 않습니다. 업로드 기능 자체가 없고, 파일을 읽고 변환하는 일이 전부 브라우저 안에서 끝납니다. 인터넷을 끊어도 동작합니다."
+              "text": "서식 복사로 제목, 목록, 표 정렬을 유지해 한글, Word, Google Docs에 붙여넣을 수 있습니다. Ctrl+P로 인쇄하거나 PDF로 저장할 수 있습니다."
             }
           },
           {
             "@type": "Question",
-            "name": "표나 코드, 체크리스트도 제대로 보이나요?",
+            "name": "탐색기에서 .md 파일을 더블클릭해 열 수 있나요?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "GitHub 스타일 표와 정렬, 체크박스, 각주, 접이식 블록, 코드 문법 강조를 지원하며 긴 문서에는 목차가 자동으로 생깁니다."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "md 파일을 PDF로 저장하거나 인쇄할 수 있나요?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "문서를 연 상태에서 Ctrl+P 를 누르면 됩니다. 인쇄 전용 스타일이 적용돼 표나 코드 블록이 페이지 중간에서 잘리지 않습니다."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "마크다운을 한글이나 워드로 옮기려면?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "문서를 연 뒤 서식 복사 버튼을 누르고 한글·워드·구글 문서에 붙여넣으면 제목, 굵은 글씨, 표와 표 안의 정렬, 목록이 그대로 살아 있습니다. ** 같은 마크다운 기호는 딸려가지 않습니다."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "탐색기에서 md 파일을 더블클릭해 열 수 있나요?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Chrome 이나 Edge 에서 앱으로 설치하면 Windows 가 MDVIEW 를 .md 연결 프로그램으로 인식합니다. 내려받을 설치 파일은 없습니다."
+              "text": "웹으로 읽을 때는 설치가 필요 없습니다. 원하면 Chrome이나 Edge에서 앱으로 설치해 Windows의 .md 연결 프로그램으로 사용할 수 있습니다."
             }
           }
         ]
@@ -169,33 +145,70 @@
         </span>
       </div>
 
-      <nav class="topbar__actions">
-        <a class="langlink" id="lang-link" href="/en/" hreflang="en" lang="en">EN</a>
-        <button class="btn btn--ghost" id="btn-toc" type="button" title="목차 (T)" hidden>
-          목차
-        </button>
-        <button class="btn btn--ghost" id="btn-theme" type="button" title="테마 전환 (D)">
+      <nav class="topbar__actions" aria-label="문서 도구">
+        <button
+          class="btn btn--ghost"
+          id="btn-theme"
+          type="button"
+          title="테마 전환 (Alt+Shift+D)"
+          aria-label="테마 전환"
+          aria-keyshortcuts="Alt+Shift+D"
+        >
           <span id="theme-label">DARK</span>
         </button>
         <button
           class="btn btn--ghost"
-          id="btn-copy"
+          id="btn-more"
           type="button"
-          title="서식을 유지한 채 복사 — 한글·워드에 그대로 붙여넣기 (C)"
-          hidden
+          title="도구 더보기"
+          aria-label="도구 더보기"
+          aria-controls="more-menu"
+          aria-expanded="false"
         >
-          서식 복사
+          더보기
         </button>
-        <button
-          class="btn btn--ghost"
-          id="btn-print"
-          type="button"
-          title="PDF 저장 · 인쇄 (Ctrl+P)"
-          hidden
-        >
-          PDF·인쇄
-        </button>
-        <button class="btn btn--mint" id="btn-install" type="button" hidden>앱으로 설치</button>
+        <div class="topbar__secondary" id="more-menu" role="group" aria-label="도구 및 설정" data-open="false">
+          <a class="langlink" id="lang-link" href="/en/" hreflang="en" lang="en">EN</a>
+          <button
+            class="btn btn--ghost"
+            id="btn-toc"
+            type="button"
+            title="목차 (Alt+Shift+T)"
+            aria-keyshortcuts="Alt+Shift+T"
+            hidden
+          >
+            목차
+          </button>
+          <button
+            class="btn btn--ghost"
+            id="btn-copy"
+            type="button"
+            title="서식을 유지한 채 복사 — 한글·워드에 그대로 붙여넣기 (Alt+Shift+C)"
+            aria-keyshortcuts="Alt+Shift+C"
+            hidden
+          >
+            서식 복사
+          </button>
+          <button
+            class="btn btn--ghost"
+            id="btn-print"
+            type="button"
+            title="PDF 저장 · 인쇄 (Ctrl+P)"
+            aria-keyshortcuts="Control+P"
+            hidden
+          >
+            PDF·인쇄
+          </button>
+          <button
+            class="btn btn--mint"
+            id="btn-install"
+            type="button"
+            title="앱 설치 또는 설정 방법 보기"
+            data-guide="/install/"
+          >
+            앱 설치·설정
+          </button>
+        </div>
         <button class="btn btn--solid" id="btn-open" type="button" title="파일 열기 (Ctrl+O)">
           파일 열기
         </button>
@@ -241,7 +254,7 @@
             <p class="dropcard__hint">
               또는 <kbd>클릭</kbd>해서 고르기 · <kbd>Ctrl</kbd>+<kbd>V</kbd> 로 붙여넣기
             </p>
-            <p class="dropcard__hint dropcard__hint--dim">
+            <p class="dropcard__hint dropcard__hint--dim" id="folder-hint" data-folder-drop-only>
               폴더를 통째로 놓으면 이미지까지 보입니다
             </p>
           </div>
@@ -257,154 +270,72 @@
 
         <ul class="specs">
           <li class="spec">
-            <span class="spec__idx">01</span>
             <span class="spec__k">서버 전송</span>
             <span class="spec__v spec__v--mint">0 byte</span>
-            <span class="spec__d">업로드 경로 자체가 없습니다. 전부 브라우저 안에서 처리됩니다</span>
+            <span class="spec__d">파일은 업로드되지 않고 브라우저 안에서 처리됩니다</span>
           </li>
           <li class="spec">
-            <span class="spec__idx">02</span>
-            <span class="spec__k">첫 렌더</span>
-            <span class="spec__v spec__v--sky">&lt; 100ms</span>
-            <span class="spec__d">콜드 스타트가 없습니다</span>
+            <span class="spec__k">문서 지원</span>
+            <span class="spec__v spec__v--sky">GFM+</span>
+            <span class="spec__d">표, 코드, 체크리스트, 각주, 프론트매터를 읽습니다</span>
           </li>
           <li class="spec">
-            <span class="spec__idx">03</span>
-            <span class="spec__k">설치하면</span>
-            <span class="spec__v spec__v--orange">더블클릭</span>
-            <span class="spec__d">탐색기에서 .md 를 바로 열 수 있습니다</span>
+            <span class="spec__k">파일 변경</span>
+            <span class="spec__v spec__v--orange">자동 반영</span>
+            <span class="spec__d">저장하면 읽던 위치를 유지한 채 다시 그립니다</span>
           </li>
         </ul>
 
-        <!-- ── SEO 본문 ─────────────────────────────────────────
-             검색으로 들어온 사람이 읽을 실제 내용. 크롤러에게도
-             이 페이지가 무엇을 하는지 알려주는 유일한 텍스트다. -->
-        <section class="about">
-          <h2 class="about__h">md 파일, 왜 열기가 이렇게 번거로울까요</h2>
-          <p class="about__p">
-            마크다운은 그냥 텍스트 파일인데, 정작 읽으려면 전용 프로그램을 깔아야 합니다. 깔고 나면
-            라이선스를 묻거나, 계정을 만들라고 하거나, 켜지는 데만 몇 초가 걸립니다. 파일 하나
-            보자고 치르기엔 과한 비용입니다.
-          </p>
-          <p class="about__p">
-            MDVIEW 는 그 단계를 전부 없앴습니다. 이 페이지에 <code>.md</code> 파일을 끌어다 놓으면
-            그 자리에서 렌더링됩니다. 회원가입도, 설치 파일도, 결제도 없습니다.
-          </p>
-
-          <h2 class="about__h">파일은 어디에도 올라가지 않습니다</h2>
-          <p class="about__p">
-            이 사이트에는 <b>업로드 기능이 존재하지 않습니다.</b> 서버로 파일을 보내는 코드 자체가
-            없고, 파싱과 렌더링이 전부 브라우저 안에서 끝납니다. 계약서나 사내 문서처럼 밖으로
-            나가면 안 되는 파일도 안심하고 열 수 있습니다. 인터넷을 끊고도 동작합니다.
-          </p>
-
-          <h2 class="about__h">읽을 수 있는 것</h2>
-          <p class="about__p">
-            GitHub 스타일 표와 정렬, 체크리스트, 각주, 접이식 블록, 프론트매터, 코드 하이라이트를
-            지원합니다. 한국어 조판을 따로 손봐서 단어 중간에서 줄이 끊기지 않습니다. 긴 문서에는
-            목차가 자동으로 생기고, 스크롤에 따라 현재 위치가 표시됩니다.
-          </p>
-
-          <h2 class="about__h">탐색기에서 .md 더블클릭으로 열기</h2>
-          <p class="about__p">
-            Chrome 이나 Edge 에서 이 사이트를 <b>앱으로 설치</b>하면, Windows 가 MDVIEW 를
-            <code>.md</code> 파일의 연결 프로그램으로 인식합니다. 그다음부터는 탐색기에서 더블클릭
-            한 번이면 렌더된 화면이 뜹니다. 설치 파일을 내려받는 방식이 아니라 브라우저가 바로
-            등록해 주는 방식이라, 지우고 싶으면 앱 목록에서 제거하면 끝입니다.
-          </p>
-
-          <h2 class="about__h">고치면 바로 반영됩니다</h2>
-          <p class="about__p">
-            파일을 열어둔 채로 편집기에서 저장하면, 화면이 알아서 다시 그려집니다. 스크롤 위치는
-            그대로 유지됩니다. 편집은 쓰던 도구에서 하고 결과만 여기서 보면 됩니다.
-          </p>
-        </section>
-
         <section class="faq">
           <div class="faq__item">
-            <span class="faq__idx">Q.01</span>
-            <h2 class="faq__q">md 파일은 무엇으로 여나요?</h2>
+            <h2 class="faq__q">파일이 서버로 전송되나요?</h2>
             <p class="faq__a">
-              메모장으로 열면 <code>#</code> 이나 <code>**</code> 같은 기호가 그대로 보입니다.
-              보기 좋게 읽으려면 마크다운 뷰어(md 리더기)가 필요한데, 보통은 프로그램을 설치해야 합니다. 이
-              페이지에 파일을 끌어다 놓으면 설치 없이 바로 읽힙니다.
+              아니요. 업로드 경로가 없으며 파싱과 렌더링은 브라우저 안에서 끝납니다. 페이지가 열린
+              뒤에는 네트워크 연결 없이도 동작합니다.
             </p>
           </div>
           <div class="faq__item">
-            <span class="faq__idx">Q.02</span>
-            <h2 class="faq__q">프로그램 설치 없이 마크다운을 볼 수 있나요?</h2>
+            <h2 class="faq__q">어떤 마크다운 문법을 지원하나요?</h2>
             <p class="faq__a">
-              네. 브라우저만 있으면 됩니다. 회원가입도 로그인도 없고, 파일을 창에 끌어다 놓는
-              즉시 렌더링됩니다.
-            </p>
-          </div>
-          <div class="faq__item">
-            <span class="faq__idx">Q.03</span>
-            <h2 class="faq__q">파일이 서버에 올라가나요?</h2>
-            <p class="faq__a">
-              올라가지 않습니다. 이 사이트에는 업로드 기능 자체가 없습니다. 파일을 읽고 변환하는
-              일이 전부 브라우저 안에서 끝나기 때문에, 계약서나 사내 문서도 안심하고 열 수
-              있습니다. 인터넷을 끊어도 동작합니다.
-            </p>
-          </div>
-          <div class="faq__item">
-            <span class="faq__idx">Q.04</span>
-            <h2 class="faq__q">표나 코드, 체크리스트도 제대로 보이나요?</h2>
-            <p class="faq__a">
-              GitHub 스타일 표와 정렬, 체크박스, 각주, 접이식 블록, 코드 문법 강조를 지원합니다.
+              표와 정렬, 체크리스트, 각주, 접이식 블록, 프론트매터, 코드 문법 강조를 지원합니다.
               긴 문서에는 목차가 자동으로 생깁니다.
             </p>
           </div>
           <div class="faq__item">
-            <span class="faq__idx">Q.05</span>
-            <h2 class="faq__q">md 파일을 PDF로 저장하거나 인쇄할 수 있나요?</h2>
+            <h2 class="faq__q">문서를 복사하거나 PDF로 저장할 수 있나요?</h2>
             <p class="faq__a">
-              문서를 연 상태에서 <code>Ctrl</code>+<code>P</code> 를 누르면 됩니다. 인쇄 전용
-              스타일이 따로 적용돼서 표나 코드 블록이 페이지 중간에서 잘리지 않습니다.
+              <b>서식 복사</b>로 제목, 목록, 표 정렬을 유지해 한글, Word, Google Docs에 붙여넣을
+              수 있습니다. <code>Ctrl</code>+<code>P</code>로 인쇄하거나 PDF로 저장할 수 있습니다.
             </p>
           </div>
           <div class="faq__item">
-            <span class="faq__idx">Q.06</span>
-            <h2 class="faq__q">마크다운을 한글이나 워드로 옮기려면?</h2>
+            <h2 class="faq__q">탐색기에서 .md 파일을 더블클릭해 열 수 있나요?</h2>
             <p class="faq__a">
-              문서를 연 뒤 <b>서식 복사</b> 버튼을 누르고 한글·워드·구글 문서에 붙여넣으면
-              제목, 굵은 글씨, 표, 표 안의 좌우 정렬, 목록이 그대로 살아 있습니다.
-              <code>**</code> 같은 기호가 딸려가지 않습니다. AI 가 써준 마크다운을 보고서에 넣을
-              때 쓰면 됩니다.
-            </p>
-          </div>
-          <div class="faq__item">
-            <span class="faq__idx">Q.07</span>
-            <h2 class="faq__q">탐색기에서 md 파일을 더블클릭해 열 수 있나요?</h2>
-            <p class="faq__a">
-              Chrome 이나 Edge 에서 이 사이트를 앱으로 설치하면 Windows 가 MDVIEW 를
-              <code>.md</code> 연결 프로그램으로 인식합니다. 그다음부터는 더블클릭 한 번이면
-              렌더된 화면이 뜹니다. 내려받을 설치 파일은 없습니다.
-              <a href="/install/">설정 방법 자세히 보기 →</a>
+              웹으로 읽을 때는 설치가 필요 없습니다. 원하면 Chrome이나 Edge에서 앱으로 설치해
+              Windows의 <code>.md</code> 연결 프로그램으로 사용할 수 있습니다.
+              <a href="/install/">설정 방법 보기 →</a>
             </p>
           </div>
         </section>
-
-        <p class="hero__foot">
-          Chrome · Edge 에서 <b>앱으로 설치</b>하면 <code>.md</code> 더블클릭 → 이 화면이 바로
-          뜹니다. <a href="/install/">설정 방법 →</a>
-        </p>
       </section>
 
       <!-- ── document view ─────────────────────────────────────── -->
       <div class="reader" id="reader" hidden>
         <aside class="toc" id="toc" hidden>
           <p class="toc__label">CONTENTS</p>
-          <nav class="toc__list" id="toclist"></nav>
+          <nav class="toc__list" id="toclist" aria-label="문서 목차"></nav>
         </aside>
-        <article class="doc markdown-body" id="doc"></article>
+        <article class="doc markdown-body" id="doc" tabindex="-1"></article>
       </div>
     </main>
 
     <div class="dropzone" id="dropzone" hidden aria-hidden="true">
       <div class="dropzone__frame">
         <p class="dropzone__title">놓으세요</p>
-        <p class="dropzone__sub">.md · .markdown · .mdown · .mkd · 폴더</p>
+        <p class="dropzone__sub">
+          .md · .markdown · .mdown · .mkd
+          <span data-folder-drop-only> · 폴더</span>
+        </p>
       </div>
     </div>
 
@@ -417,7 +348,9 @@
       <button class="langhint__x" id="langhint-close" type="button" aria-label="Dismiss">×</button>
     </aside>
 
-    <div class="toast" id="toast" hidden role="status" aria-live="polite"></div>
+    <div class="sr-only" id="announce" role="status" aria-live="polite" aria-atomic="true"></div>
+    <div class="sr-only" id="alert" role="alert" aria-live="assertive" aria-atomic="true"></div>
+    <div class="toast" id="toast" hidden></div>
 
     <input type="file" id="fallback-input" accept=".md,.markdown,.mdown,.mkd,.mdwn" hidden />
 

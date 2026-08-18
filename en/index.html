@@ -89,58 +89,34 @@
         "mainEntity": [
           {
             "@type": "Question",
-            "name": "What program opens a .md file?",
+            "name": "Is my file sent to a server?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Notepad shows the raw # and ** markers. Reading it properly normally means installing a markdown editor. MDVIEW renders it in the browser with nothing to install."
+              "text": "No. There is no upload path; parsing and rendering stay in your browser. Once loaded, the viewer also works without a network connection."
             }
           },
           {
             "@type": "Question",
-            "name": "Can I view markdown without installing anything?",
+            "name": "Which Markdown features are supported?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Yes. A browser is all you need. No signup, no login — drag the file onto the window and it renders on the spot."
+              "text": "MDVIEW supports tables and alignment, task lists, footnotes, collapsible blocks, frontmatter, and syntax highlighting. Long documents get an automatic contents rail."
             }
           },
           {
             "@type": "Question",
-            "name": "Is my file uploaded to a server?",
+            "name": "Can I copy a document or save it as a PDF?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "No. There is no upload feature at all. Reading and rendering happen entirely in your browser, and it works with the network disconnected."
+              "text": "Copy preserves headings, lists, and table alignment when you paste into Word or Google Docs. Press Ctrl+P to print or save as PDF."
             }
           },
           {
             "@type": "Question",
-            "name": "Does it render tables, code and checklists?",
+            "name": "Can I open .md files by double-clicking them?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "GitHub-flavoured tables with alignment, task lists, footnotes, collapsible blocks and syntax-highlighted code are supported, plus an automatic contents rail."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "Can I print a markdown file or save it as PDF?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Press Ctrl+P with a document open. A dedicated print stylesheet keeps tables and code blocks from being split across pages."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "How do I move markdown into Word or Google Docs?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Open the document, hit Copy, and paste. Headings, bold text, tables including their column alignment, and lists all arrive intact, with no stray markdown markers."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "Can I double-click .md files to open them?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Install the page as an app in Chrome or Edge and your OS registers MDVIEW as the handler for .md files. There is no installer to download."
+              "text": "No installation is needed to use the web viewer. Optionally install MDVIEW in Chrome or Edge and use it as a .md file handler on Windows."
             }
           }
         ]
@@ -169,33 +145,70 @@
         </span>
       </div>
 
-      <nav class="topbar__actions">
-        <a class="langlink" id="lang-link" href="/" hreflang="ko" lang="ko">한국어</a>
-        <button class="btn btn--ghost" id="btn-toc" type="button" title="Contents (T)" hidden>
-          Contents
-        </button>
-        <button class="btn btn--ghost" id="btn-theme" type="button" title="Switch theme (D)">
+      <nav class="topbar__actions" aria-label="Document tools">
+        <button
+          class="btn btn--ghost"
+          id="btn-theme"
+          type="button"
+          title="Switch theme (Alt+Shift+D)"
+          aria-label="Switch theme"
+          aria-keyshortcuts="Alt+Shift+D"
+        >
           <span id="theme-label">DARK</span>
         </button>
         <button
           class="btn btn--ghost"
-          id="btn-copy"
+          id="btn-more"
           type="button"
-          title="Copy with formatting — paste straight into Word or Docs (C)"
-          hidden
+          title="More tools"
+          aria-label="More tools"
+          aria-controls="more-menu"
+          aria-expanded="false"
         >
-          Copy
+          More
         </button>
-        <button
-          class="btn btn--ghost"
-          id="btn-print"
-          type="button"
-          title="Save as PDF · Print (Ctrl+P)"
-          hidden
-        >
-          PDF·Print
-        </button>
-        <button class="btn btn--mint" id="btn-install" type="button" hidden>Install app</button>
+        <div class="topbar__secondary" id="more-menu" role="group" aria-label="Tools and settings" data-open="false">
+          <a class="langlink" id="lang-link" href="/" hreflang="ko" lang="ko">한국어</a>
+          <button
+            class="btn btn--ghost"
+            id="btn-toc"
+            type="button"
+            title="Contents (Alt+Shift+T)"
+            aria-keyshortcuts="Alt+Shift+T"
+            hidden
+          >
+            Contents
+          </button>
+          <button
+            class="btn btn--ghost"
+            id="btn-copy"
+            type="button"
+            title="Copy with formatting — paste straight into Word or Docs (Alt+Shift+C)"
+            aria-keyshortcuts="Alt+Shift+C"
+            hidden
+          >
+            Copy
+          </button>
+          <button
+            class="btn btn--ghost"
+            id="btn-print"
+            type="button"
+            title="Save as PDF · Print (Ctrl+P)"
+            aria-keyshortcuts="Control+P"
+            hidden
+          >
+            PDF·Print
+          </button>
+          <button
+            class="btn btn--mint"
+            id="btn-install"
+            type="button"
+            title="Install the app or view setup instructions"
+            data-guide="/en/install/"
+          >
+            Install · Setup
+          </button>
+        </div>
         <button class="btn btn--solid" id="btn-open" type="button" title="Open a file (Ctrl+O)">
           Open file
         </button>
@@ -235,7 +248,7 @@
             <p class="dropcard__hint">
               or <kbd>click</kbd> to pick one · <kbd>Ctrl</kbd>+<kbd>V</kbd> to paste
             </p>
-            <p class="dropcard__hint dropcard__hint--dim">
+            <p class="dropcard__hint dropcard__hint--dim" id="folder-hint" data-folder-drop-only>
               Drop the whole folder and relative images resolve too
             </p>
           </div>
@@ -251,152 +264,72 @@
 
         <ul class="specs">
           <li class="spec">
-            <span class="spec__idx">01</span>
-            <span class="spec__k">Uploaded</span>
+            <span class="spec__k">Server upload</span>
             <span class="spec__v spec__v--mint">0 bytes</span>
-            <span class="spec__d">There is no upload path. Everything runs in your browser</span>
+            <span class="spec__d">Files are parsed and rendered in your browser</span>
           </li>
           <li class="spec">
-            <span class="spec__idx">02</span>
-            <span class="spec__k">First render</span>
-            <span class="spec__v spec__v--sky">&lt; 100ms</span>
-            <span class="spec__d">No cold start to wait through</span>
+            <span class="spec__k">Markdown</span>
+            <span class="spec__v spec__v--sky">GFM+</span>
+            <span class="spec__d">Tables, code, task lists, footnotes, and frontmatter</span>
           </li>
           <li class="spec">
-            <span class="spec__idx">03</span>
-            <span class="spec__k">Once installed</span>
-            <span class="spec__v spec__v--orange">Double-click</span>
-            <span class="spec__d">Open .md files straight from the file manager</span>
+            <span class="spec__k">File changes</span>
+            <span class="spec__v spec__v--orange">Live reload</span>
+            <span class="spec__d">Save in your editor; MDVIEW rerenders without losing your place</span>
           </li>
         </ul>
 
-        <section class="about">
-          <h2 class="about__h">Why is opening a .md file such a chore?</h2>
-          <p class="about__p">
-            Markdown is plain text, yet reading it usually means installing something. Then that
-            something wants a license key, or an account, or several seconds to boot. That is a lot
-            of ceremony for one file.
-          </p>
-          <p class="about__p">
-            MDVIEW removes every one of those steps. Drag a <code>.md</code> file onto this page and
-            it renders where it lands. No signup, no installer, no payment.
-          </p>
-
-          <h2 class="about__h">Your file never leaves the machine</h2>
-          <p class="about__p">
-            This site has <b>no upload feature at all.</b> There is no code path that sends a file to
-            a server — parsing and rendering happen entirely in the browser. Contracts, internal
-            docs, anything that must not leave your laptop is safe to open here. It works with the
-            network disconnected.
-          </p>
-
-          <h2 class="about__h">What it renders</h2>
-          <p class="about__p">
-            GitHub-flavoured tables with alignment, task lists, footnotes, collapsible sections,
-            frontmatter and syntax-highlighted code. Long documents get a contents rail that tracks
-            your scroll position, and the typography is tuned for mixed CJK and Latin text.
-          </p>
-
-          <h2 class="about__h">Double-click .md files from your file manager</h2>
-          <p class="about__p">
-            Install this page as an app in Chrome or Edge and your OS registers MDVIEW as a handler
-            for <code>.md</code> files. From then on a double-click opens the rendered document.
-            Nothing is downloaded — the browser registers it directly, so removing it is just
-            uninstalling the app.
-          </p>
-
-          <h2 class="about__h">Edits show up immediately</h2>
-          <p class="about__p">
-            Leave a document open and save it in your editor: the page redraws itself and keeps your
-            scroll position. Write wherever you like, read the result here.
-          </p>
-        </section>
-
         <section class="faq">
           <div class="faq__item">
-            <span class="faq__idx">Q.01</span>
-            <h2 class="faq__q">What program opens a .md file?</h2>
+            <h2 class="faq__q">Is my file sent to a server?</h2>
             <p class="faq__a">
-              Open one in Notepad and you get the raw <code>#</code> and <code>**</code> markers.
-              Reading it properly normally means installing a markdown editor. Drop the file on
-              this page instead and it renders immediately — nothing to install.
+              No. There is no upload path; parsing and rendering stay in your browser. Once loaded,
+              the viewer also works without a network connection.
             </p>
           </div>
           <div class="faq__item">
-            <span class="faq__idx">Q.02</span>
-            <h2 class="faq__q">Can I view markdown without installing anything?</h2>
+            <h2 class="faq__q">Which Markdown features are supported?</h2>
             <p class="faq__a">
-              Yes. A browser is all you need. No signup, no login — drag the file onto the window
-              and it renders on the spot.
+              MDVIEW supports tables and alignment, task lists, footnotes, collapsible blocks,
+              frontmatter, and syntax highlighting. Long documents get an automatic contents rail.
             </p>
           </div>
           <div class="faq__item">
-            <span class="faq__idx">Q.03</span>
-            <h2 class="faq__q">Is my file uploaded to a server?</h2>
+            <h2 class="faq__q">Can I copy a document or save it as a PDF?</h2>
             <p class="faq__a">
-              No. This site has no upload feature at all. Reading and rendering happen entirely in
-              your browser, so contracts and internal documents are safe to open here. It works
-              with the network disconnected.
+              <b>Copy</b> preserves headings, lists, and table alignment when you paste into Word or
+              Google Docs. Press <code>Ctrl</code>+<code>P</code> to print or save as PDF.
             </p>
           </div>
           <div class="faq__item">
-            <span class="faq__idx">Q.04</span>
-            <h2 class="faq__q">Does it render tables, code and checklists?</h2>
+            <h2 class="faq__q">Can I open .md files by double-clicking them?</h2>
             <p class="faq__a">
-              GitHub-flavoured tables with alignment, task lists, footnotes, collapsible blocks and
-              syntax-highlighted code are all supported. Long documents get a contents rail
-              automatically.
-            </p>
-          </div>
-          <div class="faq__item">
-            <span class="faq__idx">Q.05</span>
-            <h2 class="faq__q">Can I print a markdown file or save it as PDF?</h2>
-            <p class="faq__a">
-              Press <code>Ctrl</code>+<code>P</code> with a document open. A dedicated print
-              stylesheet keeps tables and code blocks from being split across pages.
-            </p>
-          </div>
-          <div class="faq__item">
-            <span class="faq__idx">Q.06</span>
-            <h2 class="faq__q">How do I move markdown into Word or Google Docs?</h2>
-            <p class="faq__a">
-              Open the document, hit <b>Copy</b>, and paste. Headings, bold text, tables — including
-              their column alignment — and lists all arrive intact, with no stray <code>**</code>
-              markers. Handy for dropping AI-written markdown into a report.
-            </p>
-          </div>
-          <div class="faq__item">
-            <span class="faq__idx">Q.07</span>
-            <h2 class="faq__q">Can I double-click .md files to open them?</h2>
-            <p class="faq__a">
-              Install this page as an app in Chrome or Edge and your OS registers MDVIEW as the
-              handler for <code>.md</code> files. From then on a double-click opens the rendered
-              document. There is no installer to download.
-              <a href="/en/install/">Full setup guide →</a>
+              No installation is needed to use the web viewer. Optionally install MDVIEW in Chrome
+              or Edge and use it as a <code>.md</code> file handler on Windows.
+              <a href="/en/install/">View setup guide →</a>
             </p>
           </div>
         </section>
-
-        <p class="hero__foot">
-          Install it in <b>Chrome or Edge</b> and <code>.md</code> double-clicks land right here.
-          <a href="/en/install/">Setup guide →</a>
-        </p>
       </section>
 
       <!-- ── document view ─────────────────────────────────────── -->
       <div class="reader" id="reader" hidden>
         <aside class="toc" id="toc" hidden>
           <p class="toc__label">CONTENTS</p>
-          <nav class="toc__list" id="toclist"></nav>
+          <nav class="toc__list" id="toclist" aria-label="Document contents"></nav>
         </aside>
-        <article class="doc markdown-body" id="doc"></article>
+        <article class="doc markdown-body" id="doc" tabindex="-1"></article>
       </div>
     </main>
 
     <div class="dropzone" id="dropzone" hidden aria-hidden="true">
       <div class="dropzone__frame">
         <p class="dropzone__title">Drop it</p>
-        <p class="dropzone__sub">.md · .markdown · .mdown · .mkd · folders</p>
+        <p class="dropzone__sub">
+          .md · .markdown · .mdown · .mkd
+          <span data-folder-drop-only> · folders</span>
+        </p>
       </div>
     </div>
 
@@ -408,7 +341,9 @@
       <button class="langhint__x" id="langhint-close" type="button" aria-label="닫기">×</button>
     </aside>
 
-    <div class="toast" id="toast" hidden role="status" aria-live="polite"></div>
+    <div class="sr-only" id="announce" role="status" aria-live="polite" aria-atomic="true"></div>
+    <div class="sr-only" id="alert" role="alert" aria-live="assertive" aria-atomic="true"></div>
+    <div class="toast" id="toast" hidden></div>
 
     <input type="file" id="fallback-input" accept=".md,.markdown,.mdown,.mkd,.mdwn" hidden />
 

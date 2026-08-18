@@ -5,7 +5,7 @@
   "lang": "ko",
   "dir": "ltr",
   "id": "/",
-  "start_url": "/",
+  "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
@@ -25,13 +25,6 @@
       "type": "image/png",
       "form_factor": "wide",
       "label": "렌더된 마크다운 문서와 목차"
-    },
-    {
-      "src": "/shot-narrow.png",
-      "sizes": "720x1280",
-      "type": "image/png",
-      "form_factor": "narrow",
-      "label": "마크다운 파일을 끌어다 놓는 화면"
     }
   ],
   "related_applications": [

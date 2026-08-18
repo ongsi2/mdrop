@@ -16,7 +16,11 @@
    onto its own styles, which is what someone pasting into a report
    actually wants. */
 
+import { APPROVED_INLINE_IMAGE, isSafeRasterDataUrl } from './render.ts';
+import { RASTER_PIXELS_ATTRIBUTE } from './image-policy.ts';
+
 const MAX_INLINE_IMAGE_BYTES = 3 * 1024 * 1024;
+const MAX_INLINE_IMAGE_COUNT = 50;
 
 const BODY_STYLE =
   "font-family:'Malgun Gothic',Meiryo,sans-serif;font-size:11pt;line-height:1.7;color:#111";
@@ -126,33 +130,61 @@ function stripClasses(root: HTMLElement): void {
   root.querySelectorAll('[class]').forEach((el) => el.removeAttribute('class'));
 }
 
-/** Relative images live behind `blob:` URLs that mean nothing outside
-    this tab, so they have to travel as data URIs or not at all. */
+function inlineDataBytes(src: string): number {
+  const payload = src.slice(src.indexOf(',') + 1).replace(/[\t\r\n ]/g, '');
+  return Math.ceil((payload.length * 3) / 4);
+}
+
+/**
+ * Only byte-embedded images that were already part of the Markdown may leave
+ * the page. Local folder blobs are intentionally omitted: formatted clipboard
+ * HTML often gets pasted into a remote editor, which must not receive sibling
+ * files merely because their path appeared in a document.
+ */
 async function inlineImages(root: HTMLElement): Promise<void> {
   let budget = MAX_INLINE_IMAGE_BYTES;
+  let count = 0;
 
-  await Promise.all(
-    Array.from(root.querySelectorAll('img')).map(async (img) => {
-      const src = img.getAttribute('src') ?? '';
-      if (!src.startsWith('blob:')) return;
-      try {
-        const blob = await (await fetch(src)).blob();
-        if (blob.size > budget) {
-          img.remove();
-          return;
-        }
-        budget -= blob.size;
-        img.src = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(String(reader.result));
-          reader.onerror = () => reject(reader.error);
-          reader.readAsDataURL(blob);
-        });
-      } catch {
-        img.remove();
+  for (const image of Array.from(root.querySelectorAll<HTMLImageElement>('img'))) {
+    const src = image.getAttribute('src') ?? '';
+    const approvedInline = image.getAttribute(APPROVED_INLINE_IMAGE) === '1';
+
+    try {
+      if (!approvedInline) throw new Error('unapproved image');
+      const hiddenAncestor = image.closest(
+        '[hidden], [inert], [aria-hidden="true"], details:not([open]), dialog:not([open])',
+      );
+      const width = image.getAttribute('width');
+      const height = image.getAttribute('height');
+      if (
+        hiddenAncestor ||
+        (width !== null && (!Number.isFinite(Number(width)) || Number(width) <= 0)) ||
+        (height !== null && (!Number.isFinite(Number(height)) || Number(height) <= 0))
+      ) {
+        throw new Error('hidden image');
       }
-    }),
-  );
+      count += 1;
+      if (count > MAX_INLINE_IMAGE_COUNT) throw new Error('image count exceeded');
+
+      if (isSafeRasterDataUrl(src)) {
+        const size = inlineDataBytes(src);
+        if (size > budget) throw new Error('image budget exceeded');
+        budget -= size;
+      } else {
+        throw new Error('unapproved image');
+      }
+
+      image.removeAttribute(APPROVED_INLINE_IMAGE);
+      image.removeAttribute('data-md-src');
+      image.removeAttribute('data-md-remote-src');
+      image.removeAttribute(RASTER_PIXELS_ATTRIBUTE);
+      image.removeAttribute('loading');
+      image.removeAttribute('decoding');
+      image.removeAttribute('fetchpriority');
+    } catch {
+      image.remove();
+    }
+  }
 }
 
 /* Verified against real pastes: 한글 honours `align` but not much

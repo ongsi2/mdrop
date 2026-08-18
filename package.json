@@ -4,13 +4,17 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Drop a .md file, read it. No install, no license, no app.",
+  "engines": {
+    "node": ">=22.12"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --experimental-strip-types --test tests/core.test.ts"
   },
   "dependencies": {
-    "dompurify": "^3.4.12",
+    "dompurify": "^3.4.13",
     "highlight.js": "^11.11.1",
     "markdown-it": "^14.3.0",
     "markdown-it-anchor": "^9.2.1",

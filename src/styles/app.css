@@ -8,6 +8,7 @@ html,
 body {
   margin: 0;
   padding: 0;
+  overflow-x: clip;
 }
 html {
   -webkit-text-size-adjust: 100%;
@@ -34,6 +35,17 @@ input {
    and several elements below are grid/flex *and* toggled. */
 [hidden] {
   display: none !important;
+}
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
 }
 a {
   color: inherit;
@@ -185,22 +197,25 @@ a {
 }
 
 .topbar__actions {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
   margin-left: auto;
-  /* Must be allowed to shrink, or six buttons push the whole page
-     sideways on a phone. */
   min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.topbar__actions::-webkit-scrollbar {
-  display: none;
+  overflow: visible;
 }
 .topbar__actions > * {
   flex: none;
+}
+.topbar__secondary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+#btn-more {
+  display: none;
 }
 
 /* ── buttons ───────────────────────────────────────────────── */
@@ -228,6 +243,17 @@ a {
   border-color: var(--line-3);
   background: color-mix(in srgb, var(--tx-hi) 5%, transparent);
 }
+.btn:active:not(:disabled) {
+  border-color: var(--tx-mut);
+  background: color-mix(in srgb, var(--tx-hi) 10%, transparent);
+}
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  color: var(--tx-dim);
+  border-color: var(--line);
+  background: var(--surface);
+}
 .btn--solid {
   background: var(--tx-hi);
   border-color: var(--tx-hi);
@@ -248,7 +274,8 @@ a {
   border-color: var(--mint);
   background: color-mix(in srgb, var(--mint) 18%, transparent);
 }
-.btn[aria-pressed='true'] {
+.btn[aria-pressed='true'],
+.btn[aria-expanded='true'] {
   color: var(--mint);
   border-color: color-mix(in srgb, var(--mint) 45%, transparent);
 }
@@ -298,21 +325,20 @@ a {
 }
 .hero__title {
   margin: 0;
+  min-width: 0;
   font-size: clamp(38px, 8.5vw, 68px);
   font-weight: 800;
   line-height: 1.08;
   letter-spacing: -0.03em;
   word-break: keep-all;
+  overflow-wrap: anywhere;
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 0 0.28em;
 }
 .hero__line--accent {
-  background: linear-gradient(100deg, var(--orange) 8%, var(--gold) 42%, var(--sky) 92%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--orange);
 }
 .hero__sub {
   margin: 22px auto 0;
@@ -480,17 +506,11 @@ kbd {
 }
 .spec {
   display: grid;
-  grid-template-columns: 34px 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: baseline;
   gap: 0 14px;
   padding: 16px 4px;
   border-bottom: 1px solid var(--line);
-}
-.spec__idx {
-  font-family: var(--font-display);
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  color: var(--tx-mut);
 }
 .spec__k {
   font-size: 13.5px;
@@ -514,7 +534,7 @@ kbd {
   color: var(--orange);
 }
 .spec__d {
-  grid-column: 2 / -1;
+  grid-column: 1 / -1;
   font-size: 12px;
   color: var(--tx-mut);
   word-break: keep-all;
@@ -578,18 +598,8 @@ kbd {
   border-top: 1px solid var(--line);
 }
 .faq__item {
-  display: grid;
-  grid-template-columns: 44px 1fr;
-  gap: 4px 12px;
   padding: 20px 4px;
   border-bottom: 1px solid var(--line);
-}
-.faq__idx {
-  font-family: var(--font-display);
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  color: var(--tx-mut);
-  padding-top: 3px;
 }
 .faq__q {
   margin: 0;
@@ -600,7 +610,6 @@ kbd {
   word-break: keep-all;
 }
 .faq__a {
-  grid-column: 2;
   margin: 8px 0 0;
   font-size: 13.5px;
   line-height: 1.8;
@@ -832,6 +841,30 @@ kbd {
   margin: 0 auto;
   padding: 46px 0 30vh;
 }
+.empty-doc {
+  max-width: 34rem;
+  margin: 8vh auto 0;
+  padding: 28px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-md);
+  background: var(--elevated);
+  text-align: center;
+}
+.empty-doc__title {
+  margin: 0;
+  color: var(--tx-hi);
+  font-size: 20px;
+  line-height: 1.35;
+}
+.empty-doc__body {
+  max-width: 34em;
+  margin: 8px auto 20px;
+  color: var(--tx-mut);
+  font-size: 14px;
+}
+.empty-doc__action {
+  margin-inline: auto;
+}
 
 /* ── table of contents ─────────────────────────────────────── */
 .toc {
@@ -882,6 +915,13 @@ kbd {
 .toc__item.is-active {
   color: var(--mint);
   border-left-color: var(--mint);
+}
+.toc__limit {
+  margin: 10px 0 0;
+  padding-left: 14px;
+  color: var(--tx-mut);
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 /* ── drag overlay ──────────────────────────────────────────── */
@@ -1089,29 +1129,56 @@ kbd {
   .reader[data-toc='on'] .toc {
     order: 0;
     position: static;
-    max-height: none;
+    max-height: min(42dvh, 22rem);
     max-width: 100%;
     margin: 28px 0 0;
     padding: 16px 0;
     border-bottom: 1px solid var(--line);
+    overflow-y: auto;
   }
 }
-/* Installing as an app — and the .md file association it brings —
-   is Chromium-desktop only, so the button is dead weight on a phone. */
-@media (max-width: 720px) {
-  #btn-install {
-    display: none !important;
-  }
-}
-@media (max-width: 640px) {
-  :root {
-    --gut: 16px;
-  }
+@media (max-width: 840px) {
   .topbar {
     gap: 8px;
   }
   .topbar__doc {
     display: none;
+  }
+  .topbar__actions {
+    gap: 4px;
+  }
+  #btn-more:not([hidden]) {
+    display: inline-flex;
+  }
+  .topbar__secondary {
+    position: absolute;
+    top: calc(100% + 12px);
+    right: 0;
+    z-index: 45;
+    display: none;
+    min-width: 164px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    padding: 8px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--r-md);
+    background: color-mix(in srgb, var(--overlay) 96%, transparent);
+    backdrop-filter: blur(14px);
+    box-shadow: 0 18px 40px -24px var(--void);
+  }
+  .topbar__secondary[data-open='true'] {
+    display: flex;
+  }
+  .topbar__secondary .btn,
+  .topbar__secondary .langlink {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+@media (max-width: 640px) {
+  :root {
+    --gut: 16px;
   }
   .wordmark {
     font-size: 17px;
@@ -1131,6 +1198,26 @@ kbd {
   }
   .chip {
     max-width: 100%;
+  }
+}
+@media (pointer: coarse) {
+  .btn,
+  .langlink {
+    min-height: 44px;
+  }
+}
+@media (max-width: 420px) {
+  #btn-theme {
+    width: 44px;
+    padding: 0;
+  }
+  #theme-label {
+    font-size: 0;
+  }
+  #theme-label::after {
+    content: '◐';
+    font-size: 14px;
+    letter-spacing: 0;
   }
 }
 

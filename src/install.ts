@@ -2,7 +2,16 @@ import './styles/theme.css';
 import './styles/app.css';
 
 import { lang, rememberLang } from './i18n.ts';
-import { MAX_BYTES, isMarkdownName, stashHandoff } from './files.ts';
+import {
+  MAX_BYTES,
+  TooComplexError,
+  TooLargeError,
+  isMarkdownName,
+  readText,
+  stashHandoff,
+  validateSourceText,
+} from './files.ts';
+import { safeGet, safeSet } from './storage.ts';
 
 /* A deliberately small entry point. The reader's bundle assumes a
    document view, a table of contents and a file pipeline that none of
@@ -17,6 +26,7 @@ const btnInstall = $<HTMLButtonElement>('btn-install');
 const stateReady = $('state-ready');
 const stateInstalled = $('state-installed');
 const stateManual = $('state-manual');
+const guide = $('guide');
 
 function applyTheme(theme: 'dark' | 'light'): void {
   document.documentElement.dataset.theme = theme;
@@ -24,11 +34,7 @@ function applyTheme(theme: 'dark' | 'light'): void {
   document
     .querySelector('meta[name="theme-color"]')
     ?.setAttribute('content', theme === 'dark' ? '#0b0b16' : '#fbfbfd');
-  try {
-    localStorage.setItem('mdview:theme', theme);
-  } catch {
-    /* private mode — the toggle still works for this visit */
-  }
+  safeSet('mdview:theme', theme);
 }
 
 btnTheme?.addEventListener('click', () => {
@@ -95,14 +101,25 @@ if (runningAsApp) {
 }
 
 btnInstall?.addEventListener('click', async () => {
-  if (!deferred) return;
-  await deferred.prompt();
-  const { outcome } = await deferred.userChoice;
+  const prompt = deferred;
+  if (!prompt) return;
   deferred = null;
-  if (outcome === 'accepted') show('installed');
+  btnInstall.disabled = true;
+  try {
+    await prompt.prompt();
+    const { outcome } = await prompt.userChoice;
+    show(outcome === 'accepted' ? 'installed' : 'manual');
+  } catch {
+    show('manual');
+  } finally {
+    btnInstall.disabled = false;
+  }
 });
 
-window.addEventListener('appinstalled', () => show('installed'));
+window.addEventListener('appinstalled', () => {
+  deferred = null;
+  show('installed');
+});
 
 /* ── drop handoff ──────────────────────────────────────────────
    The site's promise is "drop it anywhere", and without these the
@@ -113,6 +130,28 @@ window.addEventListener('dragover', (e) => {
   if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
 });
 
+let dropError: HTMLElement | null = null;
+function showDropError(message: string): void {
+  dropError?.remove();
+  const box = document.createElement('div');
+  box.className = 'callout callout--warn';
+  box.setAttribute('role', 'alert');
+
+  const title = document.createElement('p');
+  title.className = 'callout__title';
+  title.textContent = message;
+
+  const action = document.createElement('a');
+  action.className = 'btn btn--solid';
+  action.href = lang === 'en' ? '/en/' : '/';
+  action.textContent = lang === 'en' ? 'Open it from the reader' : '뷰어에서 파일 열기';
+
+  box.append(title, action);
+  guide?.querySelector('.steps')?.before(box);
+  dropError = box;
+  box.scrollIntoView({ block: 'center' });
+}
+
 window.addEventListener('drop', async (e) => {
   if (!e.dataTransfer?.files.length) return;
   /* Always prevented: even a rejected file must not blow the page
@@ -120,18 +159,49 @@ window.addEventListener('drop', async (e) => {
   e.preventDefault();
 
   const file = Array.from(e.dataTransfer.files).find((f) => isMarkdownName(f.name));
-  if (!file || file.size > MAX_BYTES) return;
+  if (!file) {
+    showDropError(
+      lang === 'en'
+        ? 'That is not a supported Markdown file.'
+        : '지원하는 마크다운 파일이 아닙니다.',
+    );
+    return;
+  }
+  if (file.size > MAX_BYTES) {
+    showDropError(
+      lang === 'en' ? 'That file is larger than 4 MB.' : '파일이 4MB보다 큽니다.',
+    );
+    return;
+  }
 
   try {
-    if (stashHandoff(file.name, await file.text())) {
+    const text = await readText(file);
+    validateSourceText(text, file.size);
+    if (stashHandoff(file.name, text, file.size)) {
       location.href = lang === 'en' ? '/en/' : '/';
+    } else {
+      showDropError(
+        lang === 'en'
+          ? 'This browser blocked the handoff. Open the file from the reader instead.'
+          : '브라우저가 파일 전달을 막았습니다. 뷰어에서 직접 열어 주세요.',
+      );
     }
-  } catch {
-    /* unreadable file — staying on the guide is the right outcome */
+  } catch (error) {
+    if (error instanceof TooLargeError) {
+      showDropError(lang === 'en' ? 'That file is larger than 4 MB.' : '파일이 4MB보다 큽니다.');
+    } else if (error instanceof TooComplexError) {
+      showDropError(
+        lang === 'en'
+          ? 'That document is too structurally complex to open safely.'
+          : '문서 구조가 너무 복잡해 안전하게 열 수 없습니다.',
+      );
+    } else {
+      showDropError(lang === 'en' ? 'Could not read that file.' : '파일을 읽지 못했습니다.');
+    }
   }
 });
 
-applyTheme(localStorage.getItem('mdview:theme') === 'light' ? 'light' : 'dark');
+applyTheme(safeGet('mdview:theme') === 'light' ? 'light' : 'dark');
 
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {

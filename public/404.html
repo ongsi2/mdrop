@@ -64,14 +64,11 @@
       }
       .code {
         font-family: 'Oswald', sans-serif;
-        font-size: 84px;
+        font-size: 60px;
         font-weight: 600;
         line-height: 1;
         letter-spacing: 0.04em;
-        background: linear-gradient(100deg, #ff7100 8%, #ffd452 42%, #1cc8ff 92%);
-        -webkit-background-clip: text;
-        background-clip: text;
-        color: transparent;
+        color: #ff8a3d;
       }
       h1 {
         margin: 20px 0 0;
@@ -123,6 +120,10 @@
         border-color: #fff;
         color: #000;
       }
+      .drop-error {
+        margin-top: 20px;
+        color: #ffb080;
+      }
     </style>
   </head>
   <body>
@@ -136,6 +137,7 @@
         마크다운을 읽으러 오셨다면 첫 화면에서 <b>.md</b> 파일을 끌어다 놓으시면 됩니다.<br />
         Drop a <b>.md</b> file on the home page to read it.
       </p>
+      <p class="drop-error" id="drop-error" role="alert" hidden></p>
       <div class="links">
         <a class="btn primary" href="/">첫 화면</a>
         <a class="btn" href="/en/">English</a>
@@ -148,18 +150,50 @@
       addEventListener('dragover', (e) => {
         if (e.dataTransfer && e.dataTransfer.types.includes('Files')) e.preventDefault();
       });
+      const error = document.getElementById('drop-error');
+      const fail = (message) => {
+        error.textContent = message;
+        error.hidden = false;
+      };
+      const readText = async (file) => {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        if (bytes[0] === 0xff && bytes[1] === 0xfe) {
+          return new TextDecoder('utf-16le').decode(bytes.subarray(2));
+        }
+        if (bytes[0] === 0xfe && bytes[1] === 0xff) {
+          return new TextDecoder('utf-16be').decode(bytes.subarray(2));
+        }
+        const offset = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf ? 3 : 0;
+        return new TextDecoder('utf-8').decode(bytes.subarray(offset));
+      };
+
       addEventListener('drop', async (e) => {
         if (!e.dataTransfer || !e.dataTransfer.files.length) return;
         e.preventDefault();
         const file = [...e.dataTransfer.files].find((f) =>
           /\.(md|markdown|mdown|mkd|mdwn)$/i.test(f.name),
         );
-        if (!file || file.size > 4 * 1024 * 1024) return;
+        if (!file) {
+          fail('지원하는 Markdown 파일이 아닙니다. / Unsupported Markdown file.');
+          return;
+        }
+        if (file.size > 4 * 1024 * 1024) {
+          fail('파일은 4MB 이하여야 합니다. / The file must be 4 MB or smaller.');
+          return;
+        }
         try {
-          sessionStorage.setItem('mdview:handoff', await file.text());
-          sessionStorage.setItem('mdview:handoff-name', file.name);
+          const text = await readText(file);
+          sessionStorage.setItem(
+            'mdview:handoff-v2',
+            JSON.stringify({ name: file.name, text, size: file.size }),
+          );
+          sessionStorage.removeItem('mdview:handoff');
+          sessionStorage.removeItem('mdview:handoff-name');
           location.href = '/';
-        } catch {}
+        } catch {
+          sessionStorage.removeItem('mdview:handoff-v2');
+          fail('파일을 전달하지 못했습니다. / Could not open that file.');
+        }
       });
     </script>
   </body>

@@ -3,8 +3,10 @@ import './styles/app.css';
 import './styles/markdown.css';
 
 import { enhance, highlight, renderFrontmatterCard, renderMarkdown } from './render.ts';
+import { validateMarkdownStructure } from './markdown-budget.ts';
 import {
   MAX_MB,
+  TooComplexError,
   TooLargeError,
   fromFile,
   fromFileHandle,
@@ -14,6 +16,7 @@ import {
   resolveImages,
   supportsFsAccess,
   takeHandoff,
+  validateSourceText,
   watch,
   type Source,
 } from './files.ts';
@@ -21,6 +24,21 @@ import { buildToc, type TocController } from './toc.ts';
 import { copyFormatted } from './export.ts';
 import { lang, rememberLang, t } from './i18n.ts';
 import { canRemember, clear as clearRecent, ensureReadable, forget, list, remember } from './recent.ts';
+import { safeGet, safeSet } from './storage.ts';
+
+/* A PWA has one manifest and therefore one start URL. Route only launches
+   carrying our explicit marker; normal links and crawlers are never redirected. */
+{
+  const params = new URLSearchParams(location.search);
+  const preferred = safeGet('mdview:lang');
+  if (params.get('source') === 'pwa' && (preferred === 'ko' || preferred === 'en')) {
+    const onEnglishPage = location.pathname.startsWith('/en/');
+    if ((preferred === 'en') !== onEnglishPage) {
+      const pathname = preferred === 'en' ? '/en/' : '/';
+      location.replace(`${pathname}${location.search}${location.hash}`);
+    }
+  }
+}
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -33,7 +51,10 @@ const tocList = $('toclist');
 const dropzone = $('dropzone');
 const dropcard = $('dropcard');
 const toastEl = $('toast');
+const announceEl = $('announce');
+const alertEl = $('alert');
 const fallbackInput = $<HTMLInputElement>('fallback-input');
+const skipLink = document.querySelector<HTMLAnchorElement>('.skip');
 
 const docMeta = $('docmeta');
 const docName = $('docname');
@@ -46,46 +67,67 @@ const btnTheme = $<HTMLButtonElement>('btn-theme');
 const btnPrint = $<HTMLButtonElement>('btn-print');
 const btnCopy = $<HTMLButtonElement>('btn-copy');
 const btnInstall = $<HTMLButtonElement>('btn-install');
+const btnMore = $<HTMLButtonElement>('btn-more');
+const moreMenu = $('more-menu');
 const langLink = $<HTMLAnchorElement>('lang-link');
 const themeLabel = $('theme-label');
 const recentBox = $('recents');
 const recentList = $('recent-list');
 const recentClear = $<HTMLButtonElement>('recent-clear');
 
-/* ── state ─────────────────────────────────────────────────── */
 let current: Source | null = null;
 let toc: TocController | null = null;
 let unwatch: (() => void) | null = null;
 let objectUrls: string[] = [];
-let tocEnabled = localStorage.getItem('mdview:toc') !== 'off';
+let renderEpoch = 0;
+let watcherEpoch = 0;
+let lastOpenTrigger: HTMLElement | null = null;
+let pendingPickerTrigger: HTMLElement | null = null;
+
+const storedToc = safeGet('mdview:toc');
+let tocEnabled =
+  storedToc === 'on' ||
+  (storedToc !== 'off' && !window.matchMedia('(max-width: 1100px)').matches);
 const initialTitle = document.title;
 
-/* ── chrome helpers ────────────────────────────────────────── */
+/* ── feedback ─────────────────────────────────────────────── */
 let toastTimer = 0;
+let speechSerial = 0;
+
+function speak(message: string, kind: 'info' | 'error' = 'info'): void {
+  const target = kind === 'error' ? alertEl : announceEl;
+  const serial = ++speechSerial;
+  target.textContent = '';
+  window.requestAnimationFrame(() => {
+    if (serial === speechSerial) target.textContent = message;
+  });
+}
+
+function hideToast(): void {
+  toastEl.hidden = true;
+}
+
 function toast(message: string, kind: 'info' | 'error' = 'info'): void {
   toastEl.replaceChildren(message);
   toastEl.dataset.kind = kind;
   toastEl.hidden = false;
+  speak(message, kind);
   window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(
-    () => {
-      toastEl.hidden = true;
-    },
-    kind === 'error' ? 4200 : 2200,
-  );
+  toastTimer = window.setTimeout(hideToast, kind === 'error' ? 7000 : 2600);
 }
 
-/** Stays put until acted on — an offer the reader can ignore. */
+/** Stays visible until the reader explicitly accepts the offered action. */
 function stickyToast(message: string, actionLabel: string, action: () => void): void {
   window.clearTimeout(toastTimer);
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'toast__action';
   button.textContent = actionLabel;
-  button.addEventListener('click', action);
+  button.addEventListener('click', action, { once: true });
   toastEl.replaceChildren(message, button);
   toastEl.dataset.kind = 'info';
   toastEl.hidden = false;
+  speak(message);
 }
 
 function applyTheme(theme: 'dark' | 'light'): void {
@@ -94,50 +136,40 @@ function applyTheme(theme: 'dark' | 'light'): void {
   document
     .querySelector('meta[name="theme-color"]')
     ?.setAttribute('content', theme === 'dark' ? '#0b0b16' : '#fbfbfd');
-  localStorage.setItem('mdview:theme', theme);
+  safeSet('mdview:theme', theme);
 }
 
 function describe(text: string): string {
   const chars = text.replace(/\s/g, '').length;
-  return t.stat(chars, Math.max(1, Math.round(chars / 600)));
+  return t.stat(chars, chars ? Math.max(1, Math.round(chars / 600)) : 0);
+}
+
+function revokeObjectUrls(urls: string[]): void {
+  for (const url of urls) URL.revokeObjectURL(url);
 }
 
 function releaseObjectUrls(): void {
-  objectUrls.forEach(URL.revokeObjectURL);
+  revokeObjectUrls(objectUrls);
   objectUrls = [];
 }
 
-function reportIntakeError(err: unknown): void {
-  if (err instanceof TooLargeError) toast(t.tooLarge(MAX_MB), 'error');
+function reportIntakeError(error: unknown): void {
+  if (error instanceof TooLargeError) toast(t.tooLarge(MAX_MB), 'error');
+  else if (error instanceof TooComplexError) toast(t.complexityExceeded, 'error');
   else toast(t.openFailed, 'error');
 }
 
-/* ── render pipeline ───────────────────────────────────────── */
-async function paint(text: string): Promise<void> {
-  releaseObjectUrls();
+/* ── menu and document chrome ─────────────────────────────── */
+function setMoreOpen(open: boolean): void {
+  moreMenu.dataset.open = String(open);
+  btnMore.setAttribute('aria-expanded', String(open));
+  btnMore.setAttribute('aria-label', open ? t.moreClose : t.moreOpen);
+}
 
-  const { html, meta } = renderMarkdown(text);
-  doc.innerHTML = (meta ? renderFrontmatterCard(meta) : '') + html;
-  enhance(doc);
-
-  if (current?.dir) {
-    objectUrls = await resolveImages(doc, current.dir);
-  }
-
-  toc?.destroy();
-  toc = buildToc(doc, tocList);
-  const hasToc = toc.count >= 2;
-  btnToc.hidden = !hasToc;
-  syncToc(hasToc);
-
-  docStat.textContent = describe(text);
-
-  const heading = doc.querySelector('h1');
-  document.title = `${heading?.textContent?.replace(/^#/, '').trim() || current?.name || 'MDVIEW'} — MDVIEW`;
-
-  /* Not awaited: the document is readable before the highlighter
-     finishes downloading. */
-  void highlight(doc);
+function syncDocumentActions(): void {
+  const hasActions = [btnToc, btnCopy, btnPrint, btnInstall].some((button) => !button.hidden);
+  btnMore.hidden = !hasActions;
+  if (!hasActions) setMoreOpen(false);
 }
 
 function syncToc(hasToc: boolean): void {
@@ -147,65 +179,102 @@ function syncToc(hasToc: boolean): void {
   btnToc.setAttribute('aria-pressed', String(on));
 }
 
-async function open(source: Source): Promise<void> {
-  unwatch?.();
-  unwatch = null;
-  current = source;
+/* ── atomic render pipeline ───────────────────────────────── */
+type PreparedDocument = { root: HTMLElement; urls: string[] };
 
-  /* One history entry for "a document is open", pushed once — so the
-     Back button returns to the empty state instead of leaving the
-     site. Opening another document on top reuses the same entry. */
-  if (!(history.state && history.state.mdviewDoc)) {
-    history.pushState({ mdviewDoc: true }, '', location.pathname + location.search);
-  }
-
-  hero.hidden = true;
-  reader.hidden = false;
-  docMeta.hidden = false;
-  btnPrint.hidden = false;
-  btnCopy.hidden = false;
-  docName.textContent = source.name;
-
-  await paint(source.text);
-  stage.scrollIntoView({ block: 'start' });
-  window.scrollTo({ top: 0 });
-
-  liveBadge.hidden = !source.file;
-  if (source.file) {
-    void remember(source.name, source.file);
-    unwatch = watch(
-      source,
-      async (text, lastModified) => {
-        if (!current) return;
-        current.text = text;
-        current.lastModified = lastModified;
-        const anchor = captureAnchor();
-        await paint(text);
-        restoreAnchor(anchor);
-        toast(t.reloaded);
-      },
-      /* The document stays readable, but a LIVE badge over a dead
-         watcher is a lie. */
-      () => {
-        liveBadge.hidden = true;
-      },
-    );
+function prioritizeResolvedImages(root: HTMLElement): void {
+  let first = true;
+  for (const image of root.querySelectorAll<HTMLImageElement>('img')) {
+    if (!image.hasAttribute('src')) {
+      image.loading = 'lazy';
+      image.removeAttribute('fetchpriority');
+      continue;
+    }
+    image.loading = first ? 'eager' : 'lazy';
+    if (first) image.fetchPriority = 'high';
+    else image.removeAttribute('fetchpriority');
+    first = false;
   }
 }
 
-/* ── keeping your place across a live reload ────────────────────
-   Restoring a raw pixel offset drifts as soon as an edit above the
-   viewport changes height, which is exactly what editing does.
-   Pin to the heading you were under instead. */
+function emptyDocument(name: string): HTMLElement {
+  const section = document.createElement('section');
+  section.className = 'empty-doc';
+
+  const status = document.createElement('div');
+  status.setAttribute('role', 'status');
+
+  const heading = document.createElement('h1');
+  heading.className = 'empty-doc__title';
+  heading.textContent = t.emptyTitle;
+
+  const body = document.createElement('p');
+  body.className = 'empty-doc__body';
+  body.textContent = `${name} — ${t.emptyBody}`;
+  status.append(heading, body);
+
+  const action = document.createElement('button');
+  action.type = 'button';
+  action.className = 'btn btn--solid empty-doc__action';
+  action.textContent = t.openAnother;
+  action.addEventListener('click', () => void openViaPicker(action));
+
+  section.append(status, action);
+  return section;
+}
+
+async function prepareDocument(
+  source: Source,
+  text: string,
+  epoch: number,
+  byteSize = source.size,
+): Promise<PreparedDocument | null> {
+  validateSourceText(text, byteSize);
+  validateMarkdownStructure(text);
+
+  const root = document.createElement('article');
+  if (!text.trim()) {
+    root.append(emptyDocument(source.name));
+  } else {
+    const { html, meta } = renderMarkdown(text);
+    root.innerHTML = (meta ? renderFrontmatterCard(meta) : '') + html;
+    enhance(root);
+  }
+
+  let urls: string[] = [];
+  if (source.dir) urls = await resolveImages(root, source.dir, () => epoch === renderEpoch);
+  prioritizeResolvedImages(root);
+  if (epoch !== renderEpoch) {
+    revokeObjectUrls(urls);
+    return null;
+  }
+
+  /* Highlighting is part of preparation so an older async import can never
+     mutate whatever document happens to be live when it finishes. */
+  try {
+    await highlight(root);
+  } catch {
+    // Syntax colouring is optional; readable code is already present.
+  }
+
+  if (epoch !== renderEpoch) {
+    revokeObjectUrls(urls);
+    return null;
+  }
+  return { root, urls };
+}
+
 type Anchor = { id: string; offset: number } | { y: number };
 
 function captureAnchor(): Anchor {
   let found: HTMLElement | null = null;
-  for (const h of doc.querySelectorAll<HTMLElement>('h1[id], h2[id], h3[id], h4[id]')) {
-    if (h.getBoundingClientRect().top > 140) break;
-    found = h;
+  for (const heading of doc.querySelectorAll<HTMLElement>('h1[id], h2[id], h3[id], h4[id]')) {
+    if (heading.getBoundingClientRect().top > 140) break;
+    found = heading;
   }
-  return found ? { id: found.id, offset: found.getBoundingClientRect().top } : { y: window.scrollY };
+  return found
+    ? { id: found.id, offset: found.getBoundingClientRect().top }
+    : { y: window.scrollY };
 }
 
 function restoreAnchor(anchor: Anchor): void {
@@ -213,15 +282,173 @@ function restoreAnchor(anchor: Anchor): void {
     window.scrollTo({ top: anchor.y });
     return;
   }
-  const el = doc.querySelector<HTMLElement>(`#${CSS.escape(anchor.id)}`);
-  if (!el) return;
-  window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - anchor.offset });
+  const element = doc.querySelector<HTMLElement>(`#${CSS.escape(anchor.id)}`);
+  if (!element) return;
+  window.scrollTo({
+    top: window.scrollY + element.getBoundingClientRect().top - anchor.offset,
+  });
 }
 
-/* ── closing a document (Back / Esc) ───────────────────────────── */
-function closeDocument(): void {
+function commitDocument(
+  source: Source,
+  text: string,
+  prepared: PreparedDocument,
+  options: { focus?: boolean; anchor?: Anchor; byteSize?: number } = {},
+): void {
+  const oldUrls = objectUrls;
+  toc?.destroy();
+  toc = null;
+
+  doc.replaceChildren(...Array.from(prepared.root.childNodes));
+  objectUrls = prepared.urls;
+  revokeObjectUrls(oldUrls);
+
+  current = source;
+  source.text = text;
+  source.size = options.byteSize ?? source.size;
+
+  toc = buildToc(doc, tocList);
+  const hasToc = toc.count >= 2;
+  btnToc.hidden = !hasToc;
+
+  hero.hidden = true;
+  reader.hidden = false;
+  docMeta.hidden = false;
+  const hasContent = Boolean(text.trim());
+  btnPrint.hidden = !hasContent;
+  btnCopy.hidden = !hasContent;
+  docName.textContent = source.name;
+  docStat.textContent = describe(text);
+  liveBadge.hidden = !source.file;
+  skipLink?.setAttribute('href', '#doc');
+
+  syncToc(hasToc);
+  syncDocumentActions();
+  setMoreOpen(false);
+
+  const heading = doc.querySelector('h1');
+  const title = heading?.textContent?.replace(/^#/, '').trim() || source.name || 'MDVIEW';
+  document.title = `${title} — MDVIEW`;
+
+  if (options.anchor) {
+    restoreAnchor(options.anchor);
+  } else {
+    stage.scrollIntoView({ block: 'start' });
+    window.scrollTo({ top: 0 });
+  }
+
+  if (options.focus) doc.focus({ preventScroll: true });
+  speak(t.documentOpened(source.name, docStat.textContent ?? ''));
+}
+
+function stopWatching(): void {
+  watcherEpoch += 1;
   unwatch?.();
   unwatch = null;
+}
+
+async function reloadSource(
+  source: Source,
+  text: string,
+  lastModified: number,
+  byteSize: number,
+  watcher: number,
+): Promise<void> {
+  if (watcher !== watcherEpoch) return;
+  if (current !== source) return;
+  const anchor = captureAnchor();
+  const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const restoreFocus = Boolean(active && doc.contains(active));
+  const focusHeadingId = active?.closest<HTMLElement>('h1[id], h2[id], h3[id], h4[id]')?.id;
+  const epoch = ++renderEpoch;
+  const prepared = await prepareDocument(source, text, epoch, byteSize);
+  if (
+    !prepared ||
+    watcher !== watcherEpoch ||
+    current !== source ||
+    epoch !== renderEpoch
+  ) {
+    return;
+  }
+
+  source.lastModified = lastModified;
+  commitDocument(source, text, prepared, { anchor, byteSize });
+  if (restoreFocus) {
+    const heading = focusHeadingId
+      ? doc.querySelector<HTMLElement>(`#${CSS.escape(focusHeadingId)}`)
+      : null;
+    if (heading) {
+      if (!heading.hasAttribute('tabindex')) {
+        heading.tabIndex = -1;
+        heading.addEventListener('blur', () => heading.removeAttribute('tabindex'), { once: true });
+      }
+      heading.focus({ preventScroll: true });
+    } else {
+      doc.focus({ preventScroll: true });
+    }
+  }
+  liveBadge.hidden = false;
+  toast(t.reloaded);
+}
+
+function startWatching(source: Source): void {
+  if (!source.file || current !== source) return;
+  const watcher = ++watcherEpoch;
+  liveBadge.hidden = false;
+  unwatch = watch(
+    source,
+    (text, lastModified, byteSize) =>
+      reloadSource(source, text, lastModified, byteSize, watcher),
+    () => {
+      if (watcher !== watcherEpoch || current !== source) return;
+      unwatch = null;
+      liveBadge.hidden = true;
+      toast(t.readFailed, 'error');
+    },
+    (error) => {
+      if (watcher !== watcherEpoch || current !== source) return;
+      liveBadge.hidden = true;
+      toast(
+        error instanceof TooLargeError ? t.livePaused : t.complexityExceeded,
+        'error',
+      );
+    },
+  );
+}
+
+async function openSource(source: Source, trigger?: HTMLElement | null): Promise<void> {
+  const previous = current;
+  stopWatching();
+  if (previous?.file) liveBadge.hidden = true;
+
+  const epoch = ++renderEpoch;
+  let prepared: PreparedDocument | null;
+  try {
+    prepared = await prepareDocument(source, source.text, epoch);
+  } catch (error) {
+    if (current === previous && previous?.file) startWatching(previous);
+    throw error;
+  }
+
+  if (!prepared || epoch !== renderEpoch) return;
+  lastOpenTrigger = trigger ??
+    (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+  commitDocument(source, source.text, prepared, { focus: true, byteSize: source.size });
+
+  if (!(history.state && history.state.mdviewDoc)) {
+    history.pushState({ mdviewDoc: true }, '', location.pathname + location.search);
+  }
+
+  if (source.file) {
+    void remember(source.name, source.file, source.dir);
+    startWatching(source);
+  }
+}
+
+/* ── closing and in-document navigation ───────────────────── */
+function closeDocument(): void {
+  ++renderEpoch;
+  stopWatching();
   current = null;
   releaseObjectUrls();
   toc?.destroy();
@@ -236,35 +463,52 @@ function closeDocument(): void {
   btnPrint.hidden = true;
   btnCopy.hidden = true;
   btnToc.hidden = true;
+  syncDocumentActions();
+  setMoreOpen(false);
+  skipLink?.setAttribute('href', '#stage');
 
   document.title = initialTitle;
   window.scrollTo({ top: 0 });
-  /* The document just closed is the freshest "recent" — the chips
-     must include it. */
   void renderRecents();
+
+  const target = lastOpenTrigger;
+  lastOpenTrigger = null;
+  window.requestAnimationFrame(() => {
+    if (target?.isConnected && target.getClientRects().length) target.focus();
+    else dropcard.focus();
+  });
 }
 
 window.addEventListener('popstate', (event) => {
-  /* Hash navigation inside an open document also fires popstate; the
-     doc marker distinguishes "left the document" from "moved within
-     it". */
-  if (current && !(event.state && event.state.mdviewDoc)) closeDocument();
+  if (current && !(event.state && event.state.mdviewDoc)) {
+    closeDocument();
+  } else if (!current && event.state?.mdviewDoc) {
+    /* Closing intentionally releases the local document. Forward cannot
+       resurrect it without retaining private content, so clear the marker. */
+    history.replaceState(null, '', location.pathname + location.search);
+  }
 });
 
-/* In-document hash links (heading permalinks, footnotes) must not
-   stack history entries — each one would become an extra Back press
-   on the way out. Scroll and update the URL in place instead. */
 doc.addEventListener('click', (event) => {
   const link = (event.target as HTMLElement).closest?.('a[href^="#"]');
   if (!link) return;
+  const raw = link.getAttribute('href')?.slice(1) ?? '';
+  if (!raw) return;
+
   event.preventDefault();
-  const id = decodeURIComponent(link.getAttribute('href')!.slice(1));
-  const target = document.getElementById(id);
-  target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  history.replaceState(history.state, '', `#${id}`);
+  let id = raw;
+  try {
+    id = decodeURIComponent(raw);
+  } catch {
+    // Keep the literal fragment; CSS.escape below makes lookup safe.
+  }
+  const target = doc.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  target?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
+  history.replaceState(history.state, '', `#${encodeURIComponent(id)}`);
 });
 
-/* ── recent documents ──────────────────────────────────────────── */
+/* ── recent documents ─────────────────────────────────────── */
 async function renderRecents(): Promise<void> {
   if (!canRemember()) return;
   const entries = await list();
@@ -280,19 +524,22 @@ async function renderRecents(): Promise<void> {
       chip.type = 'button';
       chip.className = 'chip';
       chip.textContent = entry.name;
-      chip.title = entry.name;
+      chip.title = entry.dir ? t.recentFolderAccess(entry.name) : entry.name;
+      if (entry.dir) chip.setAttribute('aria-label', t.recentFolderAccess(entry.name));
       chip.addEventListener('click', async () => {
-        /* Called straight from the click so the permission prompt
-           still counts as user-initiated. */
         if (!(await ensureReadable(entry.handle))) {
           toast(t.recentDenied, 'error');
           return;
         }
+
+        let dir: FileSystemDirectoryHandle | undefined;
+        if (entry.dir && (await ensureReadable(entry.dir))) dir = entry.dir;
+
         try {
-          await open(await fromFileHandle(entry.handle));
-        } catch (err) {
-          if (err instanceof TooLargeError) {
-            toast(t.tooLarge(MAX_MB), 'error');
+          await openSource(await fromFileHandle(entry.handle, dir), chip);
+        } catch (error) {
+          if (error instanceof TooLargeError || error instanceof TooComplexError) {
+            reportIntakeError(error);
             return;
           }
           await forget(entry.key);
@@ -305,19 +552,20 @@ async function renderRecents(): Promise<void> {
   );
 }
 
-/* ── intake ────────────────────────────────────────────────── */
-async function openViaPicker(): Promise<void> {
+/* ── intake ───────────────────────────────────────────────── */
+async function openViaPicker(trigger?: HTMLElement | null): Promise<void> {
+  pendingPickerTrigger = trigger ??
+    (document.activeElement instanceof HTMLElement ? document.activeElement : null);
   try {
     if (supportsFsAccess()) {
       const source = await pickFile();
-      if (source) await open(source);
+      if (source) await openSource(source, pendingPickerTrigger);
       return;
     }
     fallbackInput.click();
-  } catch (err) {
-    /* The picker throws AbortError when the user simply cancels. */
-    if ((err as DOMException)?.name === 'AbortError') return;
-    reportIntakeError(err);
+  } catch (error) {
+    if ((error as DOMException)?.name === 'AbortError') return;
+    reportIntakeError(error);
   }
 }
 
@@ -330,25 +578,24 @@ fallbackInput.addEventListener('change', async () => {
     return;
   }
   try {
-    await open(await fromFile(file));
-  } catch (err) {
-    reportIntakeError(err);
+    await openSource(await fromFile(file), pendingPickerTrigger);
+  } catch (error) {
+    reportIntakeError(error);
   }
 });
 
-/* ── drag and drop ─────────────────────────────────────────── */
 let dragDepth = 0;
 
-window.addEventListener('dragenter', (e) => {
-  if (!e.dataTransfer?.types.includes('Files')) return;
+window.addEventListener('dragenter', (event) => {
+  if (!event.dataTransfer?.types.includes('Files')) return;
   dragDepth += 1;
   dropzone.hidden = false;
 });
 
-window.addEventListener('dragover', (e) => {
-  if (!e.dataTransfer?.types.includes('Files')) return;
-  e.preventDefault();
-  e.dataTransfer.dropEffect = 'copy';
+window.addEventListener('dragover', (event) => {
+  if (!event.dataTransfer?.types.includes('Files')) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'copy';
 });
 
 window.addEventListener('dragleave', () => {
@@ -356,52 +603,65 @@ window.addEventListener('dragleave', () => {
   if (dragDepth === 0) dropzone.hidden = true;
 });
 
-window.addEventListener('drop', async (e) => {
-  if (!e.dataTransfer) return;
-  e.preventDefault();
+window.addEventListener('drop', async (event) => {
+  if (!event.dataTransfer) return;
+  event.preventDefault();
   dragDepth = 0;
   dropzone.hidden = true;
 
   try {
-    const source = await resolveDrop(e.dataTransfer);
+    const source = await resolveDrop(event.dataTransfer);
     if (!source) {
       toast(t.notMarkdown, 'error');
       return;
     }
-    await open(source);
-  } catch (err) {
-    if (err instanceof TooLargeError) toast(t.tooLarge(MAX_MB), 'error');
-    else toast(t.readFailed, 'error');
+    await openSource(source);
+  } catch (error) {
+    if (error instanceof TooLargeError || error instanceof TooComplexError) {
+      reportIntakeError(error);
+    } else {
+      toast(t.readFailed, 'error');
+    }
   }
 });
 
-/* ── paste ─────────────────────────────────────────────────── */
-document.addEventListener('paste', async (e) => {
-  const target = e.target as HTMLElement | null;
-  if (target?.isContentEditable || target instanceof HTMLInputElement) return;
+document.addEventListener('paste', async (event) => {
+  const target = event.target as HTMLElement | null;
+  if (
+    target?.isContentEditable ||
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement
+  ) {
+    return;
+  }
 
-  const file = Array.from(e.clipboardData?.files ?? []).find((f) => isMarkdownName(f.name));
+  const file = Array.from(event.clipboardData?.files ?? []).find((candidate) =>
+    isMarkdownName(candidate.name),
+  );
   if (file) {
     try {
-      await open(await fromFile(file));
-    } catch (err) {
-      reportIntakeError(err);
+      await openSource(await fromFile(file));
+    } catch (error) {
+      reportIntakeError(error);
     }
     return;
   }
 
-  const text = e.clipboardData?.getData('text/plain');
+  const text = event.clipboardData?.getData('text/plain');
   if (!text?.trim()) return;
-  await open({ name: t.pastedName, text, size: text.length });
-  toast(t.pasted);
+  const size = new Blob([text]).size;
+  try {
+    await openSource({ name: t.pastedName, text, size });
+    toast(t.pasted);
+  } catch (error) {
+    reportIntakeError(error);
+  }
 });
 
-/* ── file handler: .md double-click in Explorer ────────────────
-   Only fires for an installed PWA on Chromium desktop, which is
-   the whole point of installing it. */
 const launch = (
   window as unknown as {
-    launchQueue?: { setConsumer(cb: (p: { files?: FileSystemFileHandle[] }) => void): void };
+    launchQueue?: { setConsumer(callback: (params: { files?: FileSystemFileHandle[] }) => void): void };
   }
 ).launchQueue;
 
@@ -409,58 +669,83 @@ launch?.setConsumer(async (params) => {
   const handle = params.files?.[0];
   if (!handle) return;
   try {
-    await open(await fromFileHandle(handle));
-  } catch (err) {
-    reportIntakeError(err);
+    await openSource(await fromFileHandle(handle));
+  } catch (error) {
+    reportIntakeError(error);
   }
 });
 
-/* ── install ───────────────────────────────────────────────────
-   Chromium hides its own install affordance in the address-bar
-   overflow, where nobody finds it. Catch the event and surface a
-   real button instead. */
+/* ── install ──────────────────────────────────────────────── */
 type InstallPrompt = Event & {
   prompt(): Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 };
 
 let deferredInstall: InstallPrompt | null = null;
-const installed = window.matchMedia('(display-mode: standalone)').matches;
+const installed =
+  window.matchMedia('(display-mode: standalone)').matches ||
+  Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
+const installGuide = btnInstall.dataset.guide ?? (lang === 'ko' ? '/install/' : '/en/install/');
 
-window.addEventListener('beforeinstallprompt', (e) => {
-  e.preventDefault();
+window.addEventListener('beforeinstallprompt', (event) => {
+  event.preventDefault();
   if (installed) return;
-  deferredInstall = e as InstallPrompt;
-  btnInstall.hidden = false;
+  deferredInstall = event as InstallPrompt;
 });
 
 btnInstall.addEventListener('click', async () => {
-  if (!deferredInstall) return;
-  await deferredInstall.prompt();
-  const { outcome } = await deferredInstall.userChoice;
+  const prompt = deferredInstall;
+  if (!prompt) {
+    window.location.assign(installGuide);
+    return;
+  }
+
   deferredInstall = null;
-  btnInstall.hidden = true;
-  if (outcome === 'accepted') toast(t.installed);
+  btnInstall.disabled = true;
+  try {
+    await prompt.prompt();
+    const { outcome } = await prompt.userChoice;
+    if (outcome === 'accepted') toast(t.installed);
+  } catch {
+    window.location.assign(installGuide);
+  } finally {
+    btnInstall.disabled = false;
+  }
 });
 
 window.addEventListener('appinstalled', () => {
   deferredInstall = null;
-  btnInstall.hidden = true;
 });
 
-/* ── controls ──────────────────────────────────────────────── */
-btnOpen.addEventListener('click', openViaPicker);
-dropcard.addEventListener('click', openViaPicker);
-dropcard.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' || e.key === ' ') {
-    e.preventDefault();
-    void openViaPicker();
+/* ── controls ─────────────────────────────────────────────── */
+btnOpen.addEventListener('click', () => void openViaPicker(btnOpen));
+dropcard.addEventListener('click', () => void openViaPicker(dropcard));
+dropcard.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    void openViaPicker(dropcard);
   }
+});
+
+btnMore.textContent = t.more;
+btnMore.addEventListener('click', () => {
+  setMoreOpen(moreMenu.dataset.open !== 'true');
+});
+moreMenu.addEventListener('click', (event) => {
+  if (!(event.target as HTMLElement).closest('button')) return;
+  const wasOpen = moreMenu.dataset.open === 'true';
+  setMoreOpen(false);
+  if (wasOpen) window.requestAnimationFrame(() => btnMore.focus());
+});
+document.addEventListener('pointerdown', (event) => {
+  if (moreMenu.dataset.open !== 'true') return;
+  const target = event.target as Node;
+  if (!moreMenu.contains(target) && !btnMore.contains(target)) setMoreOpen(false);
 });
 
 btnToc.addEventListener('click', () => {
   tocEnabled = !tocEnabled;
-  localStorage.setItem('mdview:toc', tocEnabled ? 'on' : 'off');
+  safeSet('mdview:toc', tocEnabled ? 'on' : 'off');
   syncToc((toc?.count ?? 0) >= 2);
 });
 
@@ -491,98 +776,117 @@ recentClear.addEventListener('click', async () => {
   await renderRecents();
 });
 
-/* The link navigates on its own; this only records the choice so a
-   launched PWA lands in the right language next time. */
 langLink.addEventListener('click', () => rememberLang(lang === 'ko' ? 'en' : 'ko'));
 
-/* ── language hint ─────────────────────────────────────────────
-   Redirecting people based on their browser locale is hostile — it
-   hijacks a URL somebody deliberately opened, and it hides the other
-   version from search crawlers. Offering the switch costs nothing
-   and leaves the choice where it belongs. */
 {
   const hint = document.getElementById('langhint');
   const close = document.getElementById('langhint-close');
-  const HINT_KEY = 'mdview:langhint';
-
+  const hintKey = 'mdview:langhint';
   const speaksKorean = (navigator.language ?? '').toLowerCase().startsWith('ko');
   const mismatched = lang === 'ko' ? !speaksKorean : speaksKorean;
-
-  let settled = false;
-  try {
-    settled =
-      localStorage.getItem(HINT_KEY) === 'off' || localStorage.getItem('mdview:lang') !== null;
-  } catch {
-    /* private mode — showing the hint once per visit is fine */
-  }
+  const settled = safeGet(hintKey) === 'off' || safeGet('mdview:lang') !== null;
 
   if (hint && mismatched && !settled) hint.hidden = false;
-
   close?.addEventListener('click', () => {
     if (hint) hint.hidden = true;
-    try {
-      localStorage.setItem(HINT_KEY, 'off');
-    } catch {
-      /* nothing to remember it with; it simply shows again */
-    }
+    safeSet(hintKey, 'off');
   });
 }
 
-document.addEventListener('keydown', (e) => {
-  const target = e.target as HTMLElement | null;
-  if (target?.isContentEditable || target instanceof HTMLInputElement) return;
-
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
-    e.preventDefault();
-    void openViaPicker();
-    return;
-  }
-  if (e.ctrlKey || e.metaKey || e.altKey) return;
-
-  /* Through history.back() rather than closeDocument() directly, so
-     Esc and the Back button are the same action in the same order. */
-  if (e.key === 'Escape' && current) {
-    history.back();
+document.addEventListener('keydown', (event) => {
+  const target = event.target as HTMLElement | null;
+  if (
+    target?.isContentEditable ||
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement
+  ) {
     return;
   }
 
-  if (e.key.toLowerCase() === 't' && !btnToc.hidden) btnToc.click();
-  if (e.key.toLowerCase() === 'd') btnTheme.click();
-  if (e.key.toLowerCase() === 'c' && !btnCopy.hidden && !getSelection()?.toString()) {
-    /* Only when nothing is selected — otherwise this would hijack a
-       plain `c` typed during a normal text selection. */
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'o') {
+    event.preventDefault();
+    void openViaPicker(btnOpen);
+    return;
+  }
+
+  if (event.key === 'Escape') {
+    if (moreMenu.dataset.open === 'true') {
+      event.preventDefault();
+      setMoreOpen(false);
+      btnMore.focus();
+    } else if (current) {
+      history.back();
+    }
+    return;
+  }
+
+  if (!event.altKey || !event.shiftKey || event.ctrlKey || event.metaKey) return;
+  const key = event.key.toLowerCase();
+  if (key === 't' && !btnToc.hidden) {
+    event.preventDefault();
+    btnToc.click();
+  } else if (key === 'd') {
+    event.preventDefault();
+    btnTheme.click();
+  } else if (key === 'c' && !btnCopy.hidden) {
+    event.preventDefault();
     btnCopy.click();
   }
 });
 
-/* ── boot ──────────────────────────────────────────────────── */
-applyTheme(localStorage.getItem('mdview:theme') === 'light' ? 'light' : 'dark');
+/* ── boot ─────────────────────────────────────────────────── */
+applyTheme(safeGet('mdview:theme') === 'light' ? 'light' : 'dark');
+syncDocumentActions();
 void renderRecents();
 
-/* A drop on a secondary page (/install/) lands here via
-   sessionStorage — render it as though it had been dropped on us. */
+const directoryDropSupported =
+  typeof DataTransferItem !== 'undefined' &&
+  'getAsFileSystemHandle' in DataTransferItem.prototype;
+for (const element of document.querySelectorAll<HTMLElement>('[data-folder-drop-only]')) {
+  element.hidden = !directoryDropSupported;
+}
+
 const handoff = takeHandoff();
 if (handoff) {
-  void open({ name: handoff.name, text: handoff.text, size: handoff.text.length });
+  void openSource({ name: handoff.name, text: handoff.text, size: handoff.size }).catch(
+    reportIntakeError,
+  );
+}
+
+function offerServiceWorkerUpdate(worker: ServiceWorker): void {
+  stickyToast(t.updateReady, t.reload, () => {
+    let reloading = false;
+    navigator.serviceWorker.addEventListener(
+      'controllerchange',
+      () => {
+        if (reloading) return;
+        reloading = true;
+        location.reload();
+      },
+      { once: true },
+    );
+    worker.postMessage({ type: 'SKIP_WAITING' });
+  });
 }
 
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', async () => {
     try {
       const registration = await navigator.serviceWorker.register('/sw.js');
+      if (registration.waiting && navigator.serviceWorker.controller) {
+        offerServiceWorkerUpdate(registration.waiting);
+      }
 
-      /* A deploy swaps the worker, but this page keeps running the
-         assets it already loaded. Offer the reload rather than
-         yanking the document out from under whoever is reading. */
       registration.addEventListener('updatefound', () => {
         const incoming = registration.installing;
         incoming?.addEventListener('statechange', () => {
           if (incoming.state !== 'installed' || !navigator.serviceWorker.controller) return;
-          stickyToast(t.updateReady, t.reload, () => location.reload());
+          offerServiceWorkerUpdate(incoming);
         });
       });
     } catch {
-      /* offline support is a bonus, never a blocker */
+      // Offline support is an enhancement, never an intake blocker.
     }
   });
 }
