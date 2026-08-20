@@ -312,7 +312,7 @@ a {
 .hero {
   max-width: 780px;
   margin: 0 auto;
-  padding: clamp(40px, 9vh, 96px) var(--gut) 80px;
+  padding: clamp(40px, 9vh, 72px) var(--gut) clamp(80px, 12vh, 96px);
   text-align: center;
 }
 .hero__eyebrow {
@@ -322,6 +322,7 @@ a {
   font-weight: 500;
   letter-spacing: 0.34em;
   color: var(--tx-mut);
+  text-align: left;
 }
 .hero__title {
   margin: 0;
@@ -425,6 +426,46 @@ a {
   margin-top: 6px;
   color: var(--tx-mut);
   font-size: 12px;
+}
+.sample-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  margin: 8px 0 0;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--tx-mut);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--tx-mut) 45%, transparent);
+  text-underline-offset: 4px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--dur) var(--ease), translate var(--dur) var(--ease);
+}
+@media (hover: hover) {
+  .sample-open:hover {
+    color: var(--mint);
+    text-decoration-color: currentColor;
+  }
+}
+.sample-open:active {
+  translate: 0 1px;
+}
+.sample-open:disabled {
+  color: var(--tx-mut);
+  opacity: 0.55;
+  cursor: wait;
+}
+.sample-open.is-busy-visible::after {
+  content: '…';
+  width: 1em;
+  margin-left: 4px;
+  text-align: left;
 }
 kbd {
   font-family: var(--font-mono);

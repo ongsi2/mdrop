@@ -114,7 +114,7 @@ PWA 라서 `.exe` 나 설치 마법사가 존재하지 않습니다. 브라우�
 - 크롤러가 읽을 실제 본문 — 빈 랜딩 페이지가 아니라 무엇을 하는 도구인지 설명하는 문단이 있습니다
 - 언어별 OG 이미지 (`og.png` / `og-en.png`)
 - 양쪽 언어를 담은 `404.html`
-- `WebApplication` + `FAQPage` 구조화 데이터, 검색 질의를 그대로 반영한 FAQ 6문항
+- `WebSite` + `WebApplication` + `FAQPage` 구조화 데이터, 핵심 질문에 답하는 FAQ 4문항
 
 ### IndexNow
 
@@ -130,7 +130,8 @@ public/72b62dbc80654391bc7d407b1a4cb799596a60d17dfb4a3ca20b008f2f3bbc3e.txt
 ```powershell
 $key = (Get-ChildItem C:\mdview\public\*.txt | Where-Object Name -match '^[0-9a-f]{64}\.txt$').BaseName
 $body = @{ host='mdrop.app'; key=$key; keyLocation="https://mdrop.app/$key.txt";
-           urlList=@('https://mdrop.app/','https://mdrop.app/en/') } | ConvertTo-Json -Compress
+           urlList=@('https://mdrop.app/','https://mdrop.app/en/',
+                     'https://mdrop.app/install/','https://mdrop.app/en/install/') } | ConvertTo-Json -Compress
 Invoke-WebRequest -Uri 'https://api.indexnow.org/indexnow' -Method POST -Body $body `
   -ContentType 'application/json; charset=utf-8' -UseBasicParsing
 ```

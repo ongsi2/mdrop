@@ -2,7 +2,7 @@
    HTML is refreshed network-first. Fingerprinted Vite assets and the
    hand-versioned public files below are safe to serve cache-first. */
 const CACHE_PREFIX = 'mdview-';
-const CACHE = 'mdview-v8';
+const CACHE = 'mdview-v9';
 
 const SHELLS = ['/', '/en/', '/install/', '/en/install/'];
 const CORE = [
@@ -13,6 +13,8 @@ const CORE = [
   '/icon-96.png',
   '/icon-192.png',
   '/icon-512.png',
+  '/samples/welcome.ko.md',
+  '/samples/welcome.en.md',
 ];
 
 const PUBLIC_STATIC = new Set([
@@ -26,6 +28,8 @@ const PUBLIC_STATIC = new Set([
   '/og-en.png',
   '/shot-wide.png',
   '/shot-narrow.png',
+  '/samples/welcome.ko.md',
+  '/samples/welcome.en.md',
 ]);
 
 const BUILT_ASSET = /^\/assets\/[a-zA-Z0-9_./-]+$/;

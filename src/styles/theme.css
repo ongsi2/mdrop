@@ -1,3 +1,10 @@
+@import 'pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css';
+@import '@fontsource-variable/oswald/wght.css';
+
+/* Hallmark · genre: product utility · tone: technical/austere · anchor: mint on purple-black
+   · macrostructure: task-first reader · pre-emit: P5 H5 E5 S5 R5 V4
+   · slop: pass · responsive: pass (static 320–768 checks) */
+
 /* ──────────────────────────────────────────────────────────────
    Design tokens absorbed from nan2026.nhn.com (NHN GAME x AI).
    The signature is a *purple-shifted* black ladder — not neutral
@@ -45,7 +52,7 @@
   /* type */
   --font-kr: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont,
     'Apple SD Gothic Neo', system-ui, sans-serif;
-  --font-display: 'Oswald', 'Pretendard Variable', system-ui, sans-serif;
+  --font-display: 'Oswald Variable', 'Pretendard Variable', system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
     'D2Coding', 'Liberation Mono', monospace;
 

@@ -6,8 +6,8 @@ import { defineConfig, type Plugin } from 'vite';
 const CSP = [
   "default-src 'none'",
   "script-src 'self'",
-  "style-src 'self' https://cdn.jsdelivr.net https://fonts.googleapis.com",
-  "font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com",
+  "style-src 'self'",
+  "font-src 'self'",
   "img-src 'self' data: blob:",
   "connect-src 'self'",
   "manifest-src 'self'",

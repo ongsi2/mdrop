@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="dark light" />
     <meta name="theme-color" content="#0b0b16" />
-    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta name="referrer" content="no-referrer" />
 
     <title>Markdown Viewer — Drop a .md File and Read It | MDVIEW</title>
     <meta
@@ -35,6 +35,7 @@
     <meta property="og:image" content="https://mdrop.app/og-en.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="MDVIEW Markdown viewer" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Markdown Viewer — Drop a .md File and Read It" />
     <meta
@@ -42,24 +43,21 @@
       content="No install, no account, no license. Drop a .md file and it renders."
     />
     <meta name="twitter:image" content="https://mdrop.app/og-en.png" />
+    <meta name="twitter:image:alt" content="MDVIEW Markdown viewer" />
 
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="icon" href="/icon-96.png" type="image/png" sizes="96x96" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
-    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css"
-    />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Oswald:wght@300;400;500;600;700&display=swap"
-    />
-
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "MDVIEW",
+        "url": "https://mdrop.app/"
+      }
+    </script>
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -92,7 +90,7 @@
             "name": "Is my file sent to a server?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "No. There is no upload path; parsing and rendering stay in your browser. Once loaded, the viewer also works without a network connection."
+              "text": "No. There is no upload path; parsing and rendering stay in your browser. Once loaded, the viewer also works without a network connection. Anonymous page and feature-use statistics help improve MDVIEW; filenames and document content are never included."
             }
           },
           {
@@ -254,6 +252,16 @@
           </div>
         </div>
 
+        <button
+          class="sample-open"
+          id="btn-sample"
+          type="button"
+          data-sample-url="/samples/welcome.en.md"
+          data-sample-name="MDVIEW sample.md"
+        >
+          Open a sample document
+        </button>
+
         <section class="recents" id="recents" hidden>
           <div class="recents__head">
             <p class="recents__label">Recent</p>
@@ -285,7 +293,8 @@
             <h2 class="faq__q">Is my file sent to a server?</h2>
             <p class="faq__a">
               No. There is no upload path; parsing and rendering stay in your browser. Once loaded,
-              the viewer also works without a network connection.
+              the viewer also works without a network connection. Anonymous page and feature-use
+              statistics help improve MDVIEW; filenames and document content are never included.
             </p>
           </div>
           <div class="faq__item">
@@ -327,7 +336,7 @@
       <div class="dropzone__frame">
         <p class="dropzone__title">Drop it</p>
         <p class="dropzone__sub">
-          .md · .markdown · .mdown · .mkd
+          .md · .markdown · .mdown · .mkd · .mdwn
           <span data-folder-drop-only> · folders</span>
         </p>
       </div>

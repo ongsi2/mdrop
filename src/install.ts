@@ -1,6 +1,7 @@
 import './styles/theme.css';
 import './styles/app.css';
 
+import { initAnalytics, trackInstallResult } from './analytics.ts';
 import { lang, rememberLang } from './i18n.ts';
 import {
   MAX_BYTES,
@@ -16,6 +17,8 @@ import { safeGet, safeSet } from './storage.ts';
 /* A deliberately small entry point. The reader's bundle assumes a
    document view, a table of contents and a file pipeline that none of
    this page has, so it stays out of here entirely. */
+
+initAnalytics();
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T | null;
 
@@ -102,14 +105,20 @@ if (runningAsApp) {
 
 btnInstall?.addEventListener('click', async () => {
   const prompt = deferred;
-  if (!prompt) return;
+  if (!prompt) {
+    trackInstallResult('manual');
+    return;
+  }
   deferred = null;
   btnInstall.disabled = true;
   try {
+    trackInstallResult('prompt');
     await prompt.prompt();
     const { outcome } = await prompt.userChoice;
+    trackInstallResult(outcome);
     show(outcome === 'accepted' ? 'installed' : 'manual');
   } catch {
+    trackInstallResult('manual');
     show('manual');
   } finally {
     btnInstall.disabled = false;
@@ -118,6 +127,7 @@ btnInstall?.addEventListener('click', async () => {
 
 window.addEventListener('appinstalled', () => {
   deferred = null;
+  trackInstallResult('installed');
   show('installed');
 });
 

@@ -2,6 +2,12 @@ import './styles/theme.css';
 import './styles/app.css';
 import './styles/markdown.css';
 
+import {
+  initAnalytics,
+  trackDocumentOpen,
+  trackInstallResult,
+  type IntakeMethod,
+} from './analytics.ts';
 import { enhance, highlight, renderFrontmatterCard, renderMarkdown } from './render.ts';
 import { validateMarkdownStructure } from './markdown-budget.ts';
 import {
@@ -28,6 +34,7 @@ import { safeGet, safeSet } from './storage.ts';
 
 /* A PWA has one manifest and therefore one start URL. Route only launches
    carrying our explicit marker; normal links and crawlers are never redirected. */
+let redirectingForPreferredLanguage = false;
 {
   const params = new URLSearchParams(location.search);
   const preferred = safeGet('mdview:lang');
@@ -35,10 +42,12 @@ import { safeGet, safeSet } from './storage.ts';
     const onEnglishPage = location.pathname.startsWith('/en/');
     if ((preferred === 'en') !== onEnglishPage) {
       const pathname = preferred === 'en' ? '/en/' : '/';
+      redirectingForPreferredLanguage = true;
       location.replace(`${pathname}${location.search}${location.hash}`);
     }
   }
 }
+if (!redirectingForPreferredLanguage) initAnalytics();
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -67,6 +76,7 @@ const btnTheme = $<HTMLButtonElement>('btn-theme');
 const btnPrint = $<HTMLButtonElement>('btn-print');
 const btnCopy = $<HTMLButtonElement>('btn-copy');
 const btnInstall = $<HTMLButtonElement>('btn-install');
+const btnSample = $<HTMLButtonElement>('btn-sample');
 const btnMore = $<HTMLButtonElement>('btn-more');
 const moreMenu = $('more-menu');
 const langLink = $<HTMLAnchorElement>('lang-link');
@@ -416,7 +426,11 @@ function startWatching(source: Source): void {
   );
 }
 
-async function openSource(source: Source, trigger?: HTMLElement | null): Promise<void> {
+async function openSource(
+  source: Source,
+  trigger?: HTMLElement | null,
+  method: IntakeMethod = 'picker',
+): Promise<void> {
   const previous = current;
   stopWatching();
   if (previous?.file) liveBadge.hidden = true;
@@ -434,6 +448,7 @@ async function openSource(source: Source, trigger?: HTMLElement | null): Promise
   lastOpenTrigger = trigger ??
     (document.activeElement instanceof HTMLElement ? document.activeElement : null);
   commitDocument(source, source.text, prepared, { focus: true, byteSize: source.size });
+  trackDocumentOpen(method);
 
   if (!(history.state && history.state.mdviewDoc)) {
     history.pushState({ mdviewDoc: true }, '', location.pathname + location.search);
@@ -536,7 +551,7 @@ async function renderRecents(): Promise<void> {
         if (entry.dir && (await ensureReadable(entry.dir))) dir = entry.dir;
 
         try {
-          await openSource(await fromFileHandle(entry.handle, dir), chip);
+          await openSource(await fromFileHandle(entry.handle, dir), chip, 'recent');
         } catch (error) {
           if (error instanceof TooLargeError || error instanceof TooComplexError) {
             reportIntakeError(error);
@@ -559,13 +574,51 @@ async function openViaPicker(trigger?: HTMLElement | null): Promise<void> {
   try {
     if (supportsFsAccess()) {
       const source = await pickFile();
-      if (source) await openSource(source, pendingPickerTrigger);
+      if (source) await openSource(source, pendingPickerTrigger, 'picker');
       return;
     }
     fallbackInput.click();
   } catch (error) {
     if ((error as DOMException)?.name === 'AbortError') return;
     reportIntakeError(error);
+  }
+}
+
+let sampleOpening = false;
+
+async function openSample(): Promise<void> {
+  if (sampleOpening) return;
+  const path = btnSample.dataset.sampleUrl;
+  const name = btnSample.dataset.sampleName;
+  if (!path || !name) {
+    reportIntakeError(new Error('sample metadata is missing'));
+    return;
+  }
+
+  sampleOpening = true;
+  btnSample.disabled = true;
+  btnSample.setAttribute('aria-busy', 'true');
+  const busyTimer = window.setTimeout(() => btnSample.classList.add('is-busy-visible'), 150);
+  let failed = false;
+
+  try {
+    const url = new URL(path, location.href);
+    if (url.origin !== location.origin) throw new Error('sample URL must be same-origin');
+    const response = await fetch(url, { mode: 'same-origin', credentials: 'same-origin' });
+    if (!response.ok) throw new Error(`sample request failed: ${response.status}`);
+
+    const text = await response.text();
+    await openSource({ name, text, size: new Blob([text]).size }, btnSample, 'sample');
+  } catch (error) {
+    failed = true;
+    reportIntakeError(error);
+  } finally {
+    window.clearTimeout(busyTimer);
+    sampleOpening = false;
+    btnSample.disabled = false;
+    btnSample.removeAttribute('aria-busy');
+    btnSample.classList.remove('is-busy-visible');
+    if (failed) window.requestAnimationFrame(() => btnSample.focus());
   }
 }
 
@@ -578,7 +631,7 @@ fallbackInput.addEventListener('change', async () => {
     return;
   }
   try {
-    await openSource(await fromFile(file), pendingPickerTrigger);
+    await openSource(await fromFile(file), pendingPickerTrigger, 'input');
   } catch (error) {
     reportIntakeError(error);
   }
@@ -615,7 +668,7 @@ window.addEventListener('drop', async (event) => {
       toast(t.notMarkdown, 'error');
       return;
     }
-    await openSource(source);
+    await openSource(source, null, source.dir ? 'drop-folder' : 'drop-file');
   } catch (error) {
     if (error instanceof TooLargeError || error instanceof TooComplexError) {
       reportIntakeError(error);
@@ -641,7 +694,7 @@ document.addEventListener('paste', async (event) => {
   );
   if (file) {
     try {
-      await openSource(await fromFile(file));
+      await openSource(await fromFile(file), null, 'paste-file');
     } catch (error) {
       reportIntakeError(error);
     }
@@ -652,7 +705,7 @@ document.addEventListener('paste', async (event) => {
   if (!text?.trim()) return;
   const size = new Blob([text]).size;
   try {
-    await openSource({ name: t.pastedName, text, size });
+    await openSource({ name: t.pastedName, text, size }, null, 'paste-text');
     toast(t.pasted);
   } catch (error) {
     reportIntakeError(error);
@@ -669,7 +722,7 @@ launch?.setConsumer(async (params) => {
   const handle = params.files?.[0];
   if (!handle) return;
   try {
-    await openSource(await fromFileHandle(handle));
+    await openSource(await fromFileHandle(handle), null, 'launch');
   } catch (error) {
     reportIntakeError(error);
   }
@@ -696,6 +749,7 @@ window.addEventListener('beforeinstallprompt', (event) => {
 btnInstall.addEventListener('click', async () => {
   const prompt = deferredInstall;
   if (!prompt) {
+    trackInstallResult('manual');
     window.location.assign(installGuide);
     return;
   }
@@ -703,10 +757,13 @@ btnInstall.addEventListener('click', async () => {
   deferredInstall = null;
   btnInstall.disabled = true;
   try {
+    trackInstallResult('prompt');
     await prompt.prompt();
     const { outcome } = await prompt.userChoice;
+    trackInstallResult(outcome);
     if (outcome === 'accepted') toast(t.installed);
   } catch {
+    trackInstallResult('manual');
     window.location.assign(installGuide);
   } finally {
     btnInstall.disabled = false;
@@ -715,10 +772,12 @@ btnInstall.addEventListener('click', async () => {
 
 window.addEventListener('appinstalled', () => {
   deferredInstall = null;
+  trackInstallResult('installed');
 });
 
 /* ── controls ─────────────────────────────────────────────── */
 btnOpen.addEventListener('click', () => void openViaPicker(btnOpen));
+btnSample.addEventListener('click', () => void openSample());
 dropcard.addEventListener('click', () => void openViaPicker(dropcard));
 dropcard.addEventListener('keydown', (event) => {
   if (event.key === 'Enter' || event.key === ' ') {
@@ -849,7 +908,11 @@ for (const element of document.querySelectorAll<HTMLElement>('[data-folder-drop-
 
 const handoff = takeHandoff();
 if (handoff) {
-  void openSource({ name: handoff.name, text: handoff.text, size: handoff.size }).catch(
+  void openSource(
+    { name: handoff.name, text: handoff.text, size: handoff.size },
+    null,
+    'handoff',
+  ).catch(
     reportIntakeError,
   );
 }
