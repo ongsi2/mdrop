@@ -4,6 +4,8 @@ import footnote from 'markdown-it-footnote';
 import DOMPurify, { type Config as PurifyConfig } from 'dompurify';
 
 import { splitFrontmatter } from './frontmatter.ts';
+import { isMarkdownName } from './files.ts';
+import { markMissing, MISSING_REASON, type MissingReason } from './missing-image.ts';
 import {
   inspectSafeRasterDataUrl,
   MAX_DOCUMENT_RASTER_PIXELS,
@@ -48,6 +50,87 @@ md.use(anchor, {
   }),
 });
 
+/* `[[Target]]`, `[[Target|Label]]` and `[[Target#Heading]]` link to a sibling
+   document the way Obsidian and most wikis do. They become ordinary relative
+   links, so the same folder lookup that serves `./guide.md` serves them. */
+const WIKI_LINK_MAX = 512;
+
+md.inline.ruler.before('link', 'wikilink', (state, silent) => {
+  const start = state.pos;
+  const src = state.src;
+  if (src.charCodeAt(start) !== 0x5b || src.charCodeAt(start + 1) !== 0x5b) return false;
+  const end = src.indexOf(']]', start + 2);
+  if (end < 0 || end + 2 > state.posMax || end - start > WIKI_LINK_MAX) return false;
+
+  const inner = src.slice(start + 2, end);
+  if (!inner.trim() || /[\n[\]]/.test(inner)) return false;
+  const pipe = inner.indexOf('|');
+  const targetPart = (pipe >= 0 ? inner.slice(0, pipe) : inner).trim();
+  const hashAt = targetPart.indexOf('#');
+  const page = (hashAt >= 0 ? targetPart.slice(0, hashAt) : targetPart).trim();
+  const heading = hashAt >= 0 ? targetPart.slice(hashAt + 1).trim() : '';
+  if (!page && !heading) return false;
+  const label =
+    (pipe >= 0 ? inner.slice(pipe + 1).trim() : '') ||
+    (page && heading ? `${page} › ${heading}` : page || heading);
+
+  if (!silent) {
+    let href = page ? (isMarkdownName(page) ? page : `${page}.md`) : '';
+    if (heading) href += `#${encodeURIComponent(slugify(heading))}`;
+    const open = state.push('link_open', 'a', 1);
+    open.attrs = [
+      ['href', href],
+      ['class', 'wikilink'],
+    ];
+    const text = state.push('text', '', 0);
+    text.content = label;
+    state.push('link_close', 'a', -1);
+  }
+  state.pos = end + 2;
+  return true;
+});
+
+/* GitHub-style alerts: a blockquote whose first line is `[!NOTE]`, `[!TIP]`,
+   `[!IMPORTANT]`, `[!WARNING]` or `[!CAUTION]` becomes a titled callout. */
+const CALLOUT = /^\[!(note|tip|important|warning|caution)\][ \t]*(?:\n|$)/i;
+type CalloutKind = 'note' | 'tip' | 'important' | 'warning' | 'caution';
+
+md.core.ruler.after('block', 'callout', (state) => {
+  const tokens = state.tokens;
+  for (let index = 0; index + 2 < tokens.length; index += 1) {
+    if (tokens[index].type !== 'blockquote_open') continue;
+    if (tokens[index + 1].type !== 'paragraph_open' || tokens[index + 2].type !== 'inline') continue;
+    const inline = tokens[index + 2];
+    const match = CALLOUT.exec(inline.content);
+    if (!match) continue;
+
+    const kind = match[1].toLowerCase() as CalloutKind;
+    tokens[index].attrJoin('class', `alert alert--${kind}`);
+
+    const titleOpen = new state.Token('paragraph_open', 'p', 1);
+    titleOpen.attrSet('class', 'alert__title');
+    titleOpen.block = true;
+    const titleInline = new state.Token('inline', '', 0);
+    titleInline.block = true;
+    titleInline.content = '';
+    const titleText = new state.Token('text', '', 0);
+    titleText.content = a11y.callout[kind];
+    titleInline.children = [titleText];
+    const titleClose = new state.Token('paragraph_close', 'p', -1);
+    titleClose.block = true;
+
+    const rest = inline.content.slice(match[0].length);
+    if (rest.trim()) {
+      inline.content = rest;
+      tokens.splice(index + 1, 0, titleOpen, titleInline, titleClose);
+    } else {
+      /* The marker was the whole first paragraph: the title replaces it. */
+      tokens.splice(index + 1, 3, titleOpen, titleInline, titleClose);
+    }
+    index += 3;
+  }
+});
+
 /* markdown-it expresses table alignment as an inline style. Convert the only
    useful style to a tightly-scoped class so all style attributes can be banned. */
 const ALIGN = /text-align:\s*(left|center|right)/;
@@ -70,6 +153,8 @@ for (const rule of ['th_open', 'td_open'] as const) {
 
 const APP_IMAGE_SOURCE = 'data-md-src';
 const APP_REMOTE_IMAGE_SOURCE = 'data-md-remote-src';
+/** A relative link to another document; main.ts resolves it in the opened folder. */
+export const APP_DOC_LINK = 'data-md-link';
 export const APPROVED_INLINE_IMAGE = 'data-md-inline-image';
 export const APPROVED_LOCAL_IMAGE = 'data-md-local-image';
 
@@ -79,7 +164,18 @@ export function isSafeRasterDataUrl(value: string): boolean {
 
 let remainingRasterPixels = 0;
 
-const SAFE_RENDERER_CLASS = /^(?:anchor|footnotes(?:-sep)?|footnote-(?:item|ref|backref)|ta-(?:left|center|right)|language-[a-z0-9_+.-]{1,64})$/i;
+const SAFE_RENDERER_CLASS =
+  /^(?:anchor|footnotes(?:-sep)?|footnote-(?:item|ref|backref)|ta-(?:left|center|right)|language-[a-z0-9_+.-]{1,64}|wikilink|alert|alert--(?:note|tip|important|warning|caution)|alert__title)$/i;
+
+/** Anything that is not a fragment, not protocol-relative and has no scheme. */
+function isRelativePath(value: string): boolean {
+  return (
+    value !== '' &&
+    !value.startsWith('#') &&
+    !value.startsWith('//') &&
+    !/^[a-z][a-z0-9+.-]*:/i.test(value)
+  );
+}
 
 function isAbsoluteWebUrl(value: string): boolean {
   if (!/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(value)) return false;
@@ -107,9 +203,12 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
     const href = node.getAttribute('href')?.trim() ?? '';
     node.removeAttribute('target');
     node.removeAttribute('rel');
+    node.removeAttribute(APP_DOC_LINK);
     if (isAbsoluteWebUrl(href)) {
       node.setAttribute('target', '_blank');
       node.setAttribute('rel', 'noopener noreferrer');
+    } else if (isRelativePath(href)) {
+      node.setAttribute(APP_DOC_LINK, href);
     }
     return;
   }
@@ -123,10 +222,12 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
   node.removeAttribute(APPROVED_INLINE_IMAGE);
   node.removeAttribute(APPROVED_LOCAL_IMAGE);
   node.removeAttribute(RASTER_PIXELS_ATTRIBUTE);
+  node.removeAttribute(MISSING_REASON);
 
   const raw = node.getAttribute('src')?.trim() ?? '';
   if (!raw) {
     node.removeAttribute('src');
+    node.setAttribute(MISSING_REASON, 'unsupported');
     return;
   }
 
@@ -140,17 +241,25 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
       node.setAttribute(RASTER_PIXELS_ATTRIBUTE, String(pixels));
     } else {
       node.removeAttribute('src');
+      node.setAttribute(MISSING_REASON, 'budget');
     }
     return;
   }
 
   node.removeAttribute('src');
-  if (raw.length > 4096 || /^blob:/i.test(raw) || /^data:/i.test(raw)) return;
+  if (raw.length > 4096 || /^blob:/i.test(raw) || /^data:/i.test(raw)) {
+    node.setAttribute(MISSING_REASON, 'unsupported');
+    return;
+  }
 
   if (isAbsoluteWebUrl(raw)) {
     node.setAttribute(APP_REMOTE_IMAGE_SOURCE, raw);
-  } else if (!/^[a-z][a-z0-9+.-]*:/i.test(raw)) {
+    node.setAttribute(MISSING_REASON, 'remote');
+  } else if (isRelativePath(raw)) {
+    /* The reason is decided later: `no-folder` unless a folder resolves it. */
     node.setAttribute(APP_IMAGE_SOURCE, raw);
+  } else {
+    node.setAttribute(MISSING_REASON, 'unsupported');
   }
 });
 
@@ -164,9 +273,11 @@ const PURIFY_CONFIG: PurifyConfig = {
     'decoding',
     APP_IMAGE_SOURCE,
     APP_REMOTE_IMAGE_SOURCE,
+    APP_DOC_LINK,
     APPROVED_INLINE_IMAGE,
     APPROVED_LOCAL_IMAGE,
     RASTER_PIXELS_ATTRIBUTE,
+    MISSING_REASON,
   ],
   ALLOW_DATA_ATTR: false,
   /* Source-owned ARIA can create large retained attribute sets and can lie to
@@ -256,21 +367,45 @@ const a11y = document.documentElement.lang.startsWith('en')
       taskDone: (label: string) => `Completed task: ${label}`,
       taskOpen: (label: string) => `Incomplete task: ${label}`,
       table: 'Scrollable table',
+      docLink: 'Opens this document from the folder',
+      callout: {
+        note: 'Note',
+        tip: 'Tip',
+        important: 'Important',
+        warning: 'Warning',
+        caution: 'Caution',
+      },
     }
   : {
       permalink: (heading: string) => `${heading} 섹션 링크`,
       taskDone: (label: string) => `완료한 작업: ${label}`,
       taskOpen: (label: string) => `미완료 작업: ${label}`,
       table: '스크롤 가능한 표',
+      docLink: '폴더 안의 이 문서를 엽니다',
+      callout: {
+        note: '참고',
+        tip: '팁',
+        important: '중요',
+        warning: '주의',
+        caution: '경고',
+      },
     };
 
 /** Add reader controls only after sanitization; none of this markup is user-owned. */
 export function enhance(root: HTMLElement): void {
   labelPermalinks(root);
+  labelDocLinks(root);
   applyTaskLists(root);
   wrapTables(root);
   decorateCodeBlocks(root);
   softenImages(root);
+}
+
+function labelDocLinks(root: HTMLElement): void {
+  for (const link of Array.from(root.querySelectorAll<HTMLAnchorElement>(`a[${APP_DOC_LINK}]`))) {
+    link.classList.add('doclink');
+    link.title = a11y.docLink;
+  }
 }
 
 function labelPermalinks(root: HTMLElement): void {
@@ -359,18 +494,28 @@ function decorateCodeBlocks(root: HTMLElement): void {
   }
 }
 
+function hostOf(url: string): string {
+  try {
+    return new URL(url, document.baseURI).host;
+  } catch {
+    return '';
+  }
+}
+
 function softenImages(root: HTMLElement): void {
-  let first = true;
   for (const image of Array.from(root.querySelectorAll('img'))) {
     image.decoding = 'async';
-    if (image.hasAttribute('src') && first) {
-      image.loading = 'eager';
-      image.fetchPriority = 'high';
-      first = false;
-    } else {
-      image.loading = 'lazy';
+    if (!image.hasAttribute('src')) {
+      const decided = image.getAttribute(MISSING_REASON) as MissingReason | null;
+      const relative = image.getAttribute(APP_IMAGE_SOURCE);
+      const remote = image.getAttribute(APP_REMOTE_IMAGE_SOURCE);
+      if (decided) {
+        markMissing(image, decided, remote ? hostOf(remote) : '');
+      } else {
+        /* resolveImages() revisits this when the document came with a folder. */
+        markMissing(image, relative ? 'no-folder' : 'unsupported', relative?.slice(0, 120) ?? '');
+      }
     }
-    if (!image.hasAttribute('src')) image.classList.add('is-missing');
     image.addEventListener(
       'load',
       () => {
@@ -381,8 +526,7 @@ function softenImages(root: HTMLElement): void {
         ) {
           image.removeAttribute(APPROVED_INLINE_IMAGE);
           image.removeAttribute(APPROVED_LOCAL_IMAGE);
-          image.removeAttribute('src');
-          image.classList.add('is-missing');
+          markMissing(image, 'budget');
         }
       },
       { once: true },
@@ -392,11 +536,28 @@ function softenImages(root: HTMLElement): void {
       () => {
         image.removeAttribute(APPROVED_INLINE_IMAGE);
         image.removeAttribute(APPROVED_LOCAL_IMAGE);
-        image.removeAttribute('src');
-        image.classList.add('is-missing');
+        markMissing(image, 'decode');
       },
       { once: true },
     );
+  }
+  prioritizeImages(root);
+}
+
+/** The first image with a source loads eagerly, the rest lazily. Called again
+    after folder images resolve, since that changes which image is first. */
+export function prioritizeImages(root: HTMLElement): void {
+  let first = true;
+  for (const image of Array.from(root.querySelectorAll<HTMLImageElement>('img'))) {
+    if (!image.hasAttribute('src')) {
+      image.loading = 'lazy';
+      image.removeAttribute('fetchpriority');
+      continue;
+    }
+    image.loading = first ? 'eager' : 'lazy';
+    if (first) image.fetchPriority = 'high';
+    else image.removeAttribute('fetchpriority');
+    first = false;
   }
 }
 

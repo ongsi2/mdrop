@@ -6,6 +6,11 @@ export const MAX_DOCUMENT_RASTER_PIXELS = 64_000_000;
 export const MAX_INLINE_RASTER_BYTES = 3 * 1024 * 1024;
 export const RASTER_PIXELS_ATTRIBUTE = 'data-md-raster-pixels';
 
+/* Folder-resolved images: count and byte budgets per document. */
+export const MAX_LOCAL_IMAGE_COUNT = 200;
+export const MAX_LOCAL_IMAGE_BYTES = 8 * 1024 * 1024;
+export const MAX_LOCAL_IMAGE_TOTAL_BYTES = 32 * 1024 * 1024;
+
 export function reserveRasterPixels(remaining: number, pixels: number): number | null {
   if (
     !Number.isSafeInteger(remaining) ||

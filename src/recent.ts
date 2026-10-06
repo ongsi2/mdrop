@@ -4,12 +4,17 @@
    it has lapsed. Everything lives in this origin's IndexedDB and
    goes away when site data is cleared. */
 
+import type { FolderLocation } from './files.ts';
+
 export type RecentEntry = {
   key: string;
   name: string;
   handle: FileSystemFileHandle;
   /** Directory the markdown file is relative to, retained for local images. */
   dir?: FileSystemDirectoryHandle;
+  /** The dropped folder and the file's path inside it, for sibling links. */
+  root?: FileSystemDirectoryHandle;
+  dirPath?: string[];
   at: number;
 };
 
@@ -78,36 +83,65 @@ export async function list(): Promise<RecentEntry[]> {
   }
 }
 
+/** Returns the stored key so the caller can refer back to this entry. */
 export async function remember(
   name: string,
   handle: FileSystemFileHandle,
   dir?: FileSystemDirectoryHandle,
-): Promise<void> {
-  if (!canRemember()) return;
+  location?: FolderLocation,
+): Promise<string | null> {
+  if (!canRemember()) return null;
   try {
     /* Same file reopened later should move up, not duplicate. The
        handle itself is the identity the browser understands, so
        compare against what is already stored. */
     const existing = await list();
     let rememberedDir = dir;
+    let rememberedRoot = location?.root;
+    let rememberedPath = location?.dirPath;
     for (const entry of existing) {
       if (await entry.handle.isSameEntry(handle).catch(() => false)) {
         rememberedDir ??= entry.dir;
+        if (!rememberedRoot && entry.root) {
+          rememberedRoot = entry.root;
+          rememberedPath = entry.dirPath;
+        }
         await tx('readwrite', (s) => s.delete(entry.key));
       }
     }
     const key = `${name}:${Date.now()}`;
-    await tx('readwrite', (s) =>
-      s.put({ key, name, handle, dir: rememberedDir, at: Date.now() }),
-    );
+    const record: RecentEntry = {
+      key,
+      name,
+      handle,
+      dir: rememberedDir,
+      root: rememberedRoot,
+      dirPath: rememberedPath,
+      at: Date.now(),
+    };
+    await tx('readwrite', (s) => s.put(record));
 
     const kept = await list();
     const stale = (await tx<RecentEntry[]>('readonly', (s) => s.getAll())).filter(
       (e) => !kept.some((k) => k.key === e.key),
     );
     for (const entry of stale) await tx('readwrite', (s) => s.delete(entry.key));
+    return key;
   } catch {
     /* a missing history is not worth surfacing */
+    return null;
+  }
+}
+
+/** Query-only check that never prompts; safe to call outside a user gesture. */
+export async function isReadable(handle: FileSystemHandle): Promise<boolean> {
+  const withPerms = handle as FileSystemHandle & {
+    queryPermission?: (d: { mode: string }) => Promise<PermissionState>;
+  };
+  try {
+    return (await withPerms.queryPermission?.({ mode: 'read' })) === 'granted';
+  } catch {
+    return false;
   }
 }
 

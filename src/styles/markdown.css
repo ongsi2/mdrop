@@ -150,6 +150,18 @@ h6:hover .anchor,
   color: var(--mint-hi);
   border-bottom-color: var(--mint-hi);
 }
+/* A link to another document in the opened folder: dotted, so the reader
+   can tell a sibling file from a web link before clicking. */
+.markdown-body a.doclink {
+  border-bottom-style: dotted;
+  border-bottom-color: color-mix(in srgb, var(--mint) 70%, transparent);
+}
+.markdown-body a.doclink::after {
+  content: '↗';
+  margin-left: 0.2em;
+  font-size: 0.75em;
+  opacity: 0.7;
+}
 
 /* lists */
 .markdown-body ul,
@@ -218,6 +230,37 @@ h6:hover .anchor,
 }
 .markdown-body blockquote > :last-child {
   margin-bottom: 0;
+}
+
+/* callouts — GitHub `> [!NOTE]` alerts. One accent per kind, drawn only
+   through the rule and the title so the body stays as quiet as prose. */
+.markdown-body .alert {
+  --callout: var(--sky);
+  padding: 0.75em 1.15em;
+  border-left: 3px solid var(--callout);
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+  background: color-mix(in srgb, var(--callout) 7%, transparent);
+  color: var(--tx-mid);
+}
+.markdown-body .alert--tip {
+  --callout: var(--success);
+}
+.markdown-body .alert--important {
+  --callout: var(--purple);
+}
+.markdown-body .alert--warning {
+  --callout: var(--gold);
+}
+.markdown-body .alert--caution {
+  --callout: var(--error);
+}
+.markdown-body .alert__title {
+  margin: 0 0 0.4em;
+  font-size: 0.86em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--callout);
 }
 
 /* code */
@@ -370,6 +413,14 @@ pre:hover .copy-btn,
   font-size: 12.5px;
   color: var(--tx-dim);
 }
+/* Why the image is blank, and what would fix it. */
+.markdown-body .img-missing__why {
+  display: block;
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--tx-dim);
+}
 .markdown-body figure {
   margin: 1.6em 0;
 }
@@ -494,6 +545,16 @@ pre:hover .copy-btn,
   .markdown-body a {
     color: #000;
     border-bottom-color: #999;
+  }
+  .markdown-body a.doclink::after {
+    content: none;
+  }
+  .markdown-body .alert {
+    background: none;
+    color: #333;
+  }
+  .markdown-body .img-missing__why {
+    color: #555;
   }
   .markdown-body pre,
   .markdown-body .table-wrap,

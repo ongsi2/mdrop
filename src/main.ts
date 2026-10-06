@@ -8,18 +8,29 @@ import {
   trackInstallResult,
   type IntakeMethod,
 } from './analytics.ts';
-import { enhance, highlight, renderFrontmatterCard, renderMarkdown } from './render.ts';
+import {
+  APP_DOC_LINK,
+  enhance,
+  highlight,
+  prioritizeImages,
+  renderFrontmatterCard,
+  renderMarkdown,
+  slugify,
+} from './render.ts';
 import { validateMarkdownStructure } from './markdown-budget.ts';
 import {
   MAX_MB,
   TooComplexError,
   TooLargeError,
+  fromDocLink,
   fromFile,
   fromFileHandle,
   isMarkdownName,
+  resolveDocLink,
   pickFile,
   resolveDrop,
   resolveImages,
+  stashHandoff,
   supportsFsAccess,
   takeHandoff,
   validateSourceText,
@@ -27,9 +38,19 @@ import {
   type Source,
 } from './files.ts';
 import { buildToc, type TocController } from './toc.ts';
+import { moveFocus } from './focus.ts';
 import { copyFormatted } from './export.ts';
 import { lang, rememberLang, t } from './i18n.ts';
-import { canRemember, clear as clearRecent, ensureReadable, forget, list, remember } from './recent.ts';
+import {
+  canRemember,
+  clear as clearRecent,
+  ensureReadable,
+  forget,
+  isReadable,
+  list,
+  remember,
+  type RecentEntry,
+} from './recent.ts';
 import { safeGet, safeSet } from './storage.ts';
 
 /* A PWA has one manifest and therefore one start URL. Route only launches
@@ -192,21 +213,6 @@ function syncToc(hasToc: boolean): void {
 /* ── atomic render pipeline ───────────────────────────────── */
 type PreparedDocument = { root: HTMLElement; urls: string[] };
 
-function prioritizeResolvedImages(root: HTMLElement): void {
-  let first = true;
-  for (const image of root.querySelectorAll<HTMLImageElement>('img')) {
-    if (!image.hasAttribute('src')) {
-      image.loading = 'lazy';
-      image.removeAttribute('fetchpriority');
-      continue;
-    }
-    image.loading = first ? 'eager' : 'lazy';
-    if (first) image.fetchPriority = 'high';
-    else image.removeAttribute('fetchpriority');
-    first = false;
-  }
-}
-
 function emptyDocument(name: string): HTMLElement {
   const section = document.createElement('section');
   section.className = 'empty-doc';
@@ -252,8 +258,10 @@ async function prepareDocument(
   }
 
   let urls: string[] = [];
-  if (source.dir) urls = await resolveImages(root, source.dir, () => epoch === renderEpoch);
-  prioritizeResolvedImages(root);
+  if (source.dir) {
+    urls = await resolveImages(root, source.dir, () => epoch === renderEpoch);
+    prioritizeImages(root);
+  }
   if (epoch !== renderEpoch) {
     revokeObjectUrls(urls);
     return null;
@@ -388,11 +396,7 @@ async function reloadSource(
       ? doc.querySelector<HTMLElement>(`#${CSS.escape(focusHeadingId)}`)
       : null;
     if (heading) {
-      if (!heading.hasAttribute('tabindex')) {
-        heading.tabIndex = -1;
-        heading.addEventListener('blur', () => heading.removeAttribute('tabindex'), { once: true });
-      }
-      heading.focus({ preventScroll: true });
+      moveFocus(heading);
     } else {
       doc.focus({ preventScroll: true });
     }
@@ -426,10 +430,36 @@ function startWatching(source: Source): void {
   );
 }
 
+/* ── reading history inside one folder ────────────────────── */
+/* Following a link to a sibling document pushes a history entry, so Back
+   returns to the previous document at the previous position. Sources stay
+   in memory only; nothing about them is written anywhere. */
+type Visit = { source: Source; anchor?: Anchor };
+type DocState = { mdviewDoc: true; visit: number };
+let visits: Visit[] = [];
+let visitIndex = -1;
+
+function docState(visit: number): DocState {
+  return { mdviewDoc: true, visit };
+}
+
+type OpenOptions = {
+  /** Re-render in place (same document, now with a file handle) without
+      losing the reading position or moving focus. */
+  keepPosition?: boolean;
+  /** `open` starts a fresh history chain, `follow` extends it by one entry,
+      `back` re-renders an earlier entry the browser already returned to. */
+  navigation?: 'open' | 'follow' | 'back';
+  anchor?: Anchor;
+};
+
+/** `method` is null when the open is not a new document for analytics
+    purposes, e.g. a document carried across a language switch. */
 async function openSource(
   source: Source,
   trigger?: HTMLElement | null,
-  method: IntakeMethod = 'picker',
+  method: IntakeMethod | null = 'picker',
+  options: OpenOptions = {},
 ): Promise<void> {
   const previous = current;
   stopWatching();
@@ -445,19 +475,140 @@ async function openSource(
   }
 
   if (!prepared || epoch !== renderEpoch) return;
-  lastOpenTrigger = trigger ??
-    (document.activeElement instanceof HTMLElement ? document.activeElement : null);
-  commitDocument(source, source.text, prepared, { focus: true, byteSize: source.size });
-  trackDocumentOpen(method);
+  const navigation = options.navigation ?? 'open';
+  if (options.keepPosition) {
+    commitDocument(source, source.text, prepared, {
+      anchor: captureAnchor(),
+      byteSize: source.size,
+    });
+  } else {
+    if (navigation === 'open') {
+      lastOpenTrigger = trigger ??
+        (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+    }
+    commitDocument(source, source.text, prepared, {
+      focus: true,
+      anchor: options.anchor,
+      byteSize: source.size,
+    });
+  }
+  if (method) trackDocumentOpen(method);
 
-  if (!(history.state && history.state.mdviewDoc)) {
-    history.pushState({ mdviewDoc: true }, '', location.pathname + location.search);
+  const url = location.pathname + location.search;
+  if (navigation === 'follow') {
+    visits.length = Math.max(0, visitIndex + 1);
+    visits.push({ source });
+    visitIndex = visits.length - 1;
+    history.pushState(docState(visitIndex), '', url);
+  } else if (navigation === 'open') {
+    visits = [{ source }];
+    visitIndex = 0;
+    if (history.state?.mdviewDoc) history.replaceState(docState(0), '', url);
+    else history.pushState(docState(0), '', url);
   }
 
   if (source.file) {
-    void remember(source.name, source.file, source.dir);
+    const folder = source.root ? { root: source.root, dirPath: source.dirPath ?? [] } : undefined;
+    void remember(source.name, source.file, source.dir, folder).then((key) => {
+      if (key && current === source) source.recentKey = key;
+    });
     startWatching(source);
   }
+}
+
+/** Open the document a relative link points at, inside the dropped folder. */
+async function followDocLink(href: string): Promise<void> {
+  if (!current) return;
+  if (!current.root) {
+    toast(t.linkNeedsFolder, 'error');
+    return;
+  }
+  const target = resolveDocLink(current.dirPath ?? [], href);
+  if (!target) {
+    toast(t.linkOutsideFolder, 'error');
+    return;
+  }
+  const name = target.segments[target.segments.length - 1];
+  if (!isMarkdownName(name)) {
+    toast(t.linkUnsupported(name), 'error');
+    return;
+  }
+
+  const leaving = visits[visitIndex];
+  if (leaving) leaving.anchor = captureAnchor();
+  try {
+    const source = await fromDocLink(current.root, target);
+    await openSource(source, null, 'link', { navigation: 'follow' });
+    if (target.fragment && current === source) {
+      if (!jumpTo(target.fragment)) jumpTo(slugify(target.fragment));
+    }
+  } catch (error) {
+    if (error instanceof TooLargeError || error instanceof TooComplexError) {
+      reportIntakeError(error);
+    } else {
+      toast(t.linkNotFound(name), 'error');
+    }
+  }
+}
+
+/* ── carrying the document across page navigations ───────── */
+/* The language switch, the install guide and a plain reload all leave this
+   page. The open document is parked in sessionStorage on the way out so the
+   destination (or the reader on the way back) picks it up instead of
+   showing the hero. */
+function carryDocument(): void {
+  if (!current) return;
+  stashHandoff(current.name, current.text, current.size, {
+    carried: true,
+    recentKey: current.recentKey,
+  });
+}
+
+async function reopenFromRecent(
+  entry: RecentEntry,
+  dir: FileSystemDirectoryHandle | undefined,
+): Promise<void> {
+  await openSource(await fromFileHandle(entry.handle, dir), null, null, { keepPosition: true });
+  toast(t.reconnected);
+}
+
+/** A carried document is text only. Its file handle still sits in the
+    recent list, so live reload and folder images can be reattached: silently
+    when permission survived the navigation, otherwise behind one click. */
+async function reattachHandle(recentKey: string): Promise<void> {
+  if (!canRemember()) return;
+  const entry = (await list()).find((item) => item.key === recentKey);
+  if (!entry || !current || current.recentKey !== recentKey) return;
+
+  const fileGranted = await isReadable(entry.handle);
+  const dirGranted = entry.dir ? await isReadable(entry.dir) : true;
+  if (fileGranted && dirGranted) {
+    try {
+      await reopenFromRecent(entry, entry.dir);
+    } catch {
+      /* The text copy is already on screen; a vanished file changes nothing. */
+    }
+    return;
+  }
+
+  stickyToast(t.reconnectOffer, t.reconnect, async () => {
+    hideToast();
+    if (!(await ensureReadable(entry.handle))) {
+      toast(t.recentDenied, 'error');
+      return;
+    }
+    let dir: FileSystemDirectoryHandle | undefined;
+    if (entry.dir && (await ensureReadable(entry.dir))) dir = entry.dir;
+    try {
+      await reopenFromRecent(entry, dir);
+    } catch (error) {
+      if (error instanceof TooLargeError || error instanceof TooComplexError) {
+        reportIntakeError(error);
+      } else {
+        toast(t.recentGone, 'error');
+      }
+    }
+  });
 }
 
 /* ── closing and in-document navigation ───────────────────── */
@@ -465,6 +616,8 @@ function closeDocument(): void {
   ++renderEpoch;
   stopWatching();
   current = null;
+  visits = [];
+  visitIndex = -1;
   releaseObjectUrls();
   toc?.destroy();
   toc = null;
@@ -495,19 +648,59 @@ function closeDocument(): void {
 }
 
 window.addEventListener('popstate', (event) => {
-  if (current && !(event.state && event.state.mdviewDoc)) {
+  const state = event.state as DocState | null;
+  if (current && state?.mdviewDoc) {
+    const visit = visits[state.visit];
+    if (!visit) {
+      /* An entry from before a reload: its source is gone with the page. */
+      closeDocument();
+      history.replaceState(null, '', location.pathname + location.search);
+      return;
+    }
+    if (visit.source === current) return;
+    const leaving = visits[visitIndex];
+    if (leaving) leaving.anchor = captureAnchor();
+    visitIndex = state.visit;
+    void openSource(visit.source, null, null, { navigation: 'back', anchor: visit.anchor }).catch(
+      reportIntakeError,
+    );
+    return;
+  }
+  if (current && !state?.mdviewDoc) {
     closeDocument();
-  } else if (!current && event.state?.mdviewDoc) {
+  } else if (!current && state?.mdviewDoc) {
     /* Closing intentionally releases the local document. Forward cannot
        resurrect it without retaining private content, so clear the marker. */
     history.replaceState(null, '', location.pathname + location.search);
   }
 });
 
+/** Scroll to an element of the open document and move keyboard focus with
+    the viewport, exactly like the contents rail does. */
+function jumpTo(id: string): boolean {
+  const target = doc.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
+  if (!target) return false;
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  target.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
+  history.replaceState(history.state, '', `#${encodeURIComponent(id)}`);
+  moveFocus(target);
+  return true;
+}
+
 doc.addEventListener('click', (event) => {
-  const link = (event.target as HTMLElement).closest?.('a[href^="#"]');
+  const link = (event.target as HTMLElement).closest?.('a[href]');
   if (!link) return;
-  const raw = link.getAttribute('href')?.slice(1) ?? '';
+
+  const docLink = link.getAttribute(APP_DOC_LINK);
+  if (docLink !== null) {
+    event.preventDefault();
+    void followDocLink(docLink);
+    return;
+  }
+
+  const href = link.getAttribute('href') ?? '';
+  if (!href.startsWith('#')) return;
+  const raw = href.slice(1);
   if (!raw) return;
 
   event.preventDefault();
@@ -515,12 +708,11 @@ doc.addEventListener('click', (event) => {
   try {
     id = decodeURIComponent(raw);
   } catch {
-    // Keep the literal fragment; CSS.escape below makes lookup safe.
+    // Keep the literal fragment; CSS.escape in jumpTo makes lookup safe.
   }
-  const target = doc.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
-  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  target?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
-  history.replaceState(history.state, '', `#${encodeURIComponent(id)}`);
+  /* A broken footnote or anchor must neither change the URL nor, via the
+     resulting popstate, close the document. */
+  if (!jumpTo(id)) toast(t.anchorMissing, 'error');
 });
 
 /* ── recent documents ─────────────────────────────────────── */
@@ -547,11 +739,19 @@ async function renderRecents(): Promise<void> {
           return;
         }
 
+        /* Permission on the dropped folder covers every directory inside it,
+           so asking for the root once also restores sibling links. */
         let dir: FileSystemDirectoryHandle | undefined;
-        if (entry.dir && (await ensureReadable(entry.dir))) dir = entry.dir;
+        let folder: { root: FileSystemDirectoryHandle; dirPath: string[] } | undefined;
+        if (entry.root && (await ensureReadable(entry.root))) {
+          dir = entry.dir;
+          folder = { root: entry.root, dirPath: entry.dirPath ?? [] };
+        } else if (entry.dir && (await ensureReadable(entry.dir))) {
+          dir = entry.dir;
+        }
 
         try {
-          await openSource(await fromFileHandle(entry.handle, dir), chip, 'recent');
+          await openSource(await fromFileHandle(entry.handle, dir, folder), chip, 'recent');
         } catch (error) {
           if (error instanceof TooLargeError || error instanceof TooComplexError) {
             reportIntakeError(error);
@@ -835,11 +1035,26 @@ recentClear.addEventListener('click', async () => {
   await renderRecents();
 });
 
-langLink.addEventListener('click', () => rememberLang(lang === 'ko' ? 'en' : 'ko'));
+/* Any navigation away (language switch, install guide, reload, the wordmark)
+   parks the open document. A page restored from the back-forward cache still
+   holds it in memory, so the parked copy is discarded rather than left to
+   reopen something the reader may since have closed. */
+window.addEventListener('pagehide', carryDocument);
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted) takeHandoff();
+});
+
+const otherLang = lang === 'ko' ? 'en' : 'ko';
+langLink.addEventListener('click', () => rememberLang(otherLang));
 
 {
   const hint = document.getElementById('langhint');
   const close = document.getElementById('langhint-close');
+  /* The hint's link is a language switch too, so it remembers the choice
+     for the installed app exactly like the top-bar link. */
+  hint
+    ?.querySelector<HTMLAnchorElement>('.langhint__go')
+    ?.addEventListener('click', () => rememberLang(otherLang));
   const hintKey = 'mdview:langhint';
   const speaksKorean = (navigator.language ?? '').toLowerCase().startsWith('ko');
   const mismatched = lang === 'ko' ? !speaksKorean : speaksKorean;
@@ -875,7 +1090,8 @@ document.addEventListener('keydown', (event) => {
       setMoreOpen(false);
       btnMore.focus();
     } else if (current) {
-      history.back();
+      /* Leave the whole chain of linked documents, not just the last one. */
+      history.go(-Math.max(1, visitIndex + 1));
     }
     return;
   }
@@ -908,13 +1124,17 @@ for (const element of document.querySelectorAll<HTMLElement>('[data-folder-drop-
 
 const handoff = takeHandoff();
 if (handoff) {
-  void openSource(
-    { name: handoff.name, text: handoff.text, size: handoff.size },
-    null,
-    'handoff',
-  ).catch(
-    reportIntakeError,
-  );
+  const source: Source = {
+    name: handoff.name,
+    text: handoff.text,
+    size: handoff.size,
+    recentKey: handoff.recentKey,
+  };
+  void openSource(source, null, handoff.carried ? null : 'handoff')
+    .then(() => {
+      if (handoff.recentKey && current === source) return reattachHandle(handoff.recentKey);
+    })
+    .catch(reportIntakeError);
 }
 
 function offerServiceWorkerUpdate(worker: ServiceWorker): void {

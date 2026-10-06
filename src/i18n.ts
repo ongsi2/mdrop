@@ -2,7 +2,7 @@
    flashes on load. Only the strings JavaScript produces at runtime
    are looked up here. */
 
-import { safeSet } from './storage';
+import { safeSet } from './storage.ts';
 
 export type Lang = 'ko' | 'en';
 
@@ -57,6 +57,14 @@ const strings = {
     taskOpen: '완료하지 않은 할 일',
     tableRegion: '가로로 스크롤할 수 있는 표',
     folderDropUnavailable: '이 브라우저에서는 폴더 드롭을 지원하지 않습니다',
+    anchorMissing: '문서 안에서 해당 위치를 찾을 수 없습니다',
+    reconnectOffer: '읽던 문서를 이어서 보여드립니다. 파일 변경 감지와 폴더 이미지를 다시 켤까요?',
+    reconnect: '다시 연결',
+    reconnected: '파일에 다시 연결했습니다',
+    linkNeedsFolder: '폴더를 통째로 끌어다 놓으면 문서 사이를 이동할 수 있습니다',
+    linkOutsideFolder: '열어 둔 폴더 밖의 문서는 열 수 없습니다',
+    linkUnsupported: (name: string) => `${name} — 마크다운 문서만 열 수 있습니다`,
+    linkNotFound: (name: string) => `${name} — 폴더에서 문서를 찾지 못했습니다`,
   },
   en: {
     copy: 'Copy',
@@ -100,6 +108,14 @@ const strings = {
     taskOpen: 'Incomplete task',
     tableRegion: 'Horizontally scrollable table',
     folderDropUnavailable: 'Folder drop is not supported in this browser',
+    anchorMissing: 'That location does not exist in this document',
+    reconnectOffer: 'Resumed your document. Reconnect live reload and folder images?',
+    reconnect: 'Reconnect',
+    reconnected: 'Reconnected to the file',
+    linkNeedsFolder: 'Drop the whole folder to move between its documents',
+    linkOutsideFolder: 'Documents outside the opened folder cannot be opened',
+    linkUnsupported: (name: string) => `${name} — only markdown documents can be opened`,
+    linkNotFound: (name: string) => `${name} — not found in the folder`,
   },
 } as const;
 

@@ -2,7 +2,7 @@
    HTML is refreshed network-first. Fingerprinted Vite assets and the
    hand-versioned public files below are safe to serve cache-first. */
 const CACHE_PREFIX = 'mdview-';
-const CACHE = 'mdview-v9';
+const CACHE = 'mdview-v10';
 
 const SHELLS = ['/', '/en/', '/install/', '/en/install/'];
 const CORE = [

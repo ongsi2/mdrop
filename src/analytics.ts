@@ -40,7 +40,8 @@ export type IntakeMethod =
   | 'recent'
   | 'launch'
   | 'handoff'
-  | 'sample';
+  | 'sample'
+  | 'link';
 
 export function trackDocumentOpen(method: IntakeMethod): void {
   if (enabled) track('Document Open', { method });

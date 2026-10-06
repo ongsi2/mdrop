@@ -26,8 +26,10 @@ const BODY_STYLE =
   "font-family:'Malgun Gothic',Meiryo,sans-serif;font-size:11pt;line-height:1.7;color:#111";
 
 function stripChrome(root: HTMLElement): void {
-  root.querySelectorAll('.copy-btn, .anchor').forEach((el) => el.remove());
+  root.querySelectorAll('.copy-btn, .anchor, .img-missing__why').forEach((el) => el.remove());
   root.querySelectorAll('[id]').forEach((el) => el.removeAttribute('id'));
+  root.querySelectorAll('[data-md-link]').forEach((el) => el.removeAttribute('data-md-link'));
+  root.querySelectorAll('[data-md-missing]').forEach((el) => el.removeAttribute('data-md-missing'));
 }
 
 /** Copies inline content only — block children (the <p> a loose list

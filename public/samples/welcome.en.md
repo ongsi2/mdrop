@@ -34,6 +34,15 @@ const greeting = 'Hello';
 console.log(`${greeting}, Markdown!`);
 ```
 
+## Callouts
+
+> [!TIP]
+> Drop a whole folder and relative links such as `./guide.md` or `[[wiki links]]` move between
+> its documents, with the images beside them shown too.
+
+> [!WARNING]
+> Images from remote addresses are never loaded, for privacy. The reason appears below the image.
+
 ## Collapsible content
 
 <details>

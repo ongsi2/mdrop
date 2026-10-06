@@ -1,12 +1,23 @@
 /* File intake. Everything here stays on the device; no upload path exists. */
 
+import { inspectRaster } from './raster.ts';
 import {
-  inspectSafeRaster,
   MAX_DOCUMENT_RASTER_PIXELS,
+  MAX_LOCAL_IMAGE_BYTES,
+  MAX_LOCAL_IMAGE_COUNT,
+  MAX_LOCAL_IMAGE_TOTAL_BYTES,
   MAX_RASTER_DIMENSION,
   MAX_RASTER_PIXELS,
   RASTER_PIXELS_ATTRIBUTE,
   reserveRasterPixels,
+  withinRasterBudget,
+} from './image-policy.ts';
+import { clearMissing, markMissing, type MissingReason } from './missing-image.ts';
+
+export {
+  MAX_LOCAL_IMAGE_BYTES,
+  MAX_LOCAL_IMAGE_COUNT,
+  MAX_LOCAL_IMAGE_TOTAL_BYTES,
 } from './image-policy.ts';
 
 export type Source = {
@@ -16,7 +27,14 @@ export type Source = {
   /** Real handles enable live reload and directory-relative images. */
   file?: FileSystemFileHandle;
   dir?: FileSystemDirectoryHandle;
+  /** The dropped folder and this file's directory path inside it. Links to
+      sibling documents are resolved against these, so `../` can climb back
+      up without ever leaving the folder the reader chose. */
+  root?: FileSystemDirectoryHandle;
+  dirPath?: string[];
   lastModified?: number;
+  /** Key of this document's entry in the recent list, when it has one. */
+  recentKey?: string;
 };
 
 const MD_RE = /\.(md|markdown|mdown|mkd|mdwn)$/i;
@@ -132,9 +150,12 @@ export async function pickFile(): Promise<Source | null> {
   return handle ? fromFileHandle(handle) : null;
 }
 
+export type FolderLocation = { root: FileSystemDirectoryHandle; dirPath: string[] };
+
 export async function fromFileHandle(
   handle: FileSystemFileHandle,
   dir?: FileSystemDirectoryHandle,
+  location?: FolderLocation,
 ): Promise<Source> {
   const file = await handle.getFile();
   if (!isMarkdownName(file.name)) throw new Error('not markdown');
@@ -147,6 +168,8 @@ export async function fromFileHandle(
     size: file.size,
     file: handle,
     dir,
+    root: location?.root ?? dir,
+    dirPath: location?.dirPath ?? [],
     lastModified: file.lastModified,
   };
 }
@@ -195,8 +218,9 @@ export async function resolveDrop(dataTransfer: DataTransfer): Promise<Source | 
       const file = handle as FileSystemFileHandle;
       if (isMarkdownName(file.name)) return fromFileHandle(file);
     } else if (handle.kind === 'directory') {
-      const found = await findMarkdownInDir(handle as FileSystemDirectoryHandle);
-      if (found) return fromFileHandle(found.file, found.dir);
+      const root = handle as FileSystemDirectoryHandle;
+      const found = await findMarkdownInDir(root);
+      if (found) return fromFileHandle(found.file, found.dir, { root, dirPath: found.dirPath });
     }
   }
 
@@ -206,19 +230,22 @@ export async function resolveDrop(dataTransfer: DataTransfer): Promise<Source | 
   return null;
 }
 
-type FoundMarkdown = { file: FileSystemFileHandle; dir: FileSystemDirectoryHandle };
+type FoundMarkdown = {
+  file: FileSystemFileHandle;
+  dir: FileSystemDirectoryHandle;
+  dirPath: string[];
+};
 
 /** README first at each depth, then the shallowest markdown file. */
 async function findMarkdownInDir(root: FileSystemDirectoryHandle): Promise<FoundMarkdown | null> {
   const MAX_DEPTH = 4;
   const MAX_ENTRIES = 1_000;
   let scanned = 0;
-  let level: Array<{ dir: FileSystemDirectoryHandle; depth: number }> = [
-    { dir: root, depth: 0 },
-  ];
+  type Level = { dir: FileSystemDirectoryHandle; depth: number; path: string[] };
+  let level: Level[] = [{ dir: root, depth: 0, path: [] }];
 
   while (level.length) {
-    const next: Array<{ dir: FileSystemDirectoryHandle; depth: number }> = [];
+    const next: Level[] = [];
     let fallback: FoundMarkdown | null = null;
 
     for (const current of level) {
@@ -228,11 +255,19 @@ async function findMarkdownInDir(root: FileSystemDirectoryHandle): Promise<Found
         if (scanned > MAX_ENTRIES) return fallback;
 
         if (handle.kind === 'file' && isMarkdownName(name)) {
-          const found = { file: handle as FileSystemFileHandle, dir: current.dir };
+          const found = {
+            file: handle as FileSystemFileHandle,
+            dir: current.dir,
+            dirPath: current.path,
+          };
           if (/^readme\./i.test(name)) return found;
           fallback ??= found;
         } else if (handle.kind === 'directory' && current.depth < MAX_DEPTH) {
-          next.push({ dir: handle as FileSystemDirectoryHandle, depth: current.depth + 1 });
+          next.push({
+            dir: handle as FileSystemDirectoryHandle,
+            depth: current.depth + 1,
+            path: [...current.path, name],
+          });
         }
       }
     }
@@ -248,11 +283,64 @@ const APPROVED_INLINE_IMAGE = 'data-md-inline-image';
 const APPROVED_LOCAL_IMAGE = 'data-md-local-image';
 const SAFE_IMAGE_EXTENSION = /\.(?:png|jpe?g|gif|webp|avif)$/i;
 const MAX_IMAGE_PATH_DEPTH = 32;
-
-export const MAX_LOCAL_IMAGE_COUNT = 200;
-export const MAX_LOCAL_IMAGE_BYTES = 8 * 1024 * 1024;
-export const MAX_LOCAL_IMAGE_TOTAL_BYTES = 32 * 1024 * 1024;
 const IMAGE_RESOLVE_CONCURRENCY = 4;
+
+/* ── links to sibling documents ──────────────────────────────── */
+
+export type DocLinkTarget = { segments: string[]; fragment: string };
+
+/**
+ * Normalize a relative link against the open document's folder path. Returns
+ * null when the link is absolute, malformed, or climbs above the folder the
+ * reader dropped; nothing outside that folder is ever looked up.
+ */
+export function resolveDocLink(dirPath: string[], href: string): DocLinkTarget | null {
+  const trimmed = href.trim();
+  const hashAt = trimmed.indexOf('#');
+  let fragment = hashAt >= 0 ? trimmed.slice(hashAt + 1) : '';
+  try {
+    fragment = decodeURIComponent(fragment);
+  } catch {
+    // A literal fragment is still usable for lookup.
+  }
+  const path = (hashAt >= 0 ? trimmed.slice(0, hashAt) : trimmed)
+    .split('?', 1)[0]
+    .replace(/\\/g, '/');
+  if (!path || path.startsWith('/')) return null;
+
+  const segments = [...dirPath];
+  for (const encoded of path.split('/')) {
+    if (!encoded || encoded === '.') continue;
+    let decoded = '';
+    try {
+      decoded = decodeURIComponent(encoded);
+    } catch {
+      return null;
+    }
+    if (decoded === '..') {
+      if (!segments.length) return null;
+      segments.pop();
+      continue;
+    }
+    if (!decoded || decoded.length > 255 || /[\\/\0]/.test(decoded)) return null;
+    segments.push(decoded);
+    if (segments.length > MAX_IMAGE_PATH_DEPTH) return null;
+  }
+  if (!segments.length) return null;
+  return { segments, fragment };
+}
+
+/** Open a markdown file inside the dropped folder by its normalized path. */
+export async function fromDocLink(
+  root: FileSystemDirectoryHandle,
+  target: DocLinkTarget,
+): Promise<Source> {
+  const dirPath = target.segments.slice(0, -1);
+  let dir = root;
+  for (const segment of dirPath) dir = await dir.getDirectoryHandle(segment);
+  const handle = await dir.getFileHandle(target.segments[target.segments.length - 1]);
+  return fromFileHandle(handle, dir, { root, dirPath });
+}
 
 function safeImagePath(raw: string): { key: string; segments: string[] } | null {
   const trimmed = raw.trim();
@@ -296,7 +384,7 @@ export async function resolveImages(
 ): Promise<string[]> {
   const images = Array.from(root.querySelectorAll<HTMLImageElement>(`img[${APP_IMAGE_SOURCE}]`));
   const created: string[] = [];
-  const byPath = new Map<string, Promise<ResolvedImage | null>>();
+  const byPath = new Map<string, Promise<ResolvedImage | MissingReason | null>>();
   const byDirectory = new Map<string, Promise<FileSystemDirectoryHandle | null>>([
     ['', Promise.resolve(dir)],
   ]);
@@ -307,10 +395,9 @@ export async function resolveImages(
     const pixels = Number(image.getAttribute(RASTER_PIXELS_ATTRIBUTE));
     const remaining = reserveRasterPixels(remainingPixels, pixels);
     if (remaining === null) {
-      image.removeAttribute('src');
       image.removeAttribute(APPROVED_INLINE_IMAGE);
       image.removeAttribute(RASTER_PIXELS_ATTRIBUTE);
-      image.classList.add('is-missing');
+      markMissing(image, 'budget');
     } else {
       remainingPixels = remaining;
     }
@@ -318,8 +405,7 @@ export async function resolveImages(
 
   for (const image of images.slice(MAX_LOCAL_IMAGE_COUNT)) {
     image.removeAttribute(APP_IMAGE_SOURCE);
-    image.removeAttribute('src');
-    image.classList.add('is-missing');
+    markMissing(image, 'too-many');
   }
 
   function resolveDirectory(segments: string[]): Promise<FileSystemDirectoryHandle | null> {
@@ -346,13 +432,18 @@ export async function resolveImages(
     return parent;
   }
 
-  async function load(path: { key: string; segments: string[] }): Promise<ResolvedImage | null> {
+  /** Resolves to the blob, to the reason it was refused, or to null when the
+      render was superseded and nothing should be marked. */
+  async function load(
+    path: { key: string; segments: string[] },
+  ): Promise<ResolvedImage | MissingReason | null> {
     let reservedBytes = 0;
     let reservedPixels = 0;
     try {
       if (!shouldContinue()) return null;
       const parent = await resolveDirectory(path.segments.slice(0, -1));
-      if (!parent || !shouldContinue()) return null;
+      if (!shouldContinue()) return null;
+      if (!parent) return 'not-found';
       const handle = await parent.getFileHandle(path.segments[path.segments.length - 1]);
       if (!shouldContinue()) return null;
       const file = await handle.getFile();
@@ -361,7 +452,7 @@ export async function resolveImages(
         file.size > MAX_LOCAL_IMAGE_BYTES ||
         totalBytes + file.size > MAX_LOCAL_IMAGE_TOTAL_BYTES
       ) {
-        return null;
+        return 'too-large';
       }
 
       /* Reserve synchronously before the signature read yields so concurrent
@@ -373,16 +464,22 @@ export async function resolveImages(
         totalBytes -= reservedBytes;
         return null;
       }
-      const info = inspectSafeRaster(bytes);
-      if (!info) {
+      /* Same policy as inspectSafeRaster(), split so the reader learns
+         whether the file was the wrong kind or merely too big. */
+      const info = inspectRaster(bytes);
+      if (!info || info.animated) {
         totalBytes -= reservedBytes;
-        return null;
+        return 'unsupported';
+      }
+      if (!withinRasterBudget(info)) {
+        totalBytes -= reservedBytes;
+        return 'budget';
       }
       const pixels = info.width * info.height;
       const remaining = reserveRasterPixels(remainingPixels, pixels);
       if (remaining === null) {
         totalBytes -= reservedBytes;
-        return null;
+        return 'budget';
       }
       remainingPixels = remaining;
       reservedPixels = pixels;
@@ -396,7 +493,9 @@ export async function resolveImages(
     } catch {
       if (reservedBytes) totalBytes -= reservedBytes;
       if (reservedPixels) remainingPixels += reservedPixels;
-      return null;
+      /* Lookup and read failures alike: the path does not resolve to a
+         readable file in this folder. */
+      return shouldContinue() ? 'not-found' : null;
     }
   }
 
@@ -408,10 +507,11 @@ export async function resolveImages(
       image.removeAttribute('src');
       image.removeAttribute(APPROVED_LOCAL_IMAGE);
 
-      const path = safeImagePath(image.getAttribute(APP_IMAGE_SOURCE) ?? '');
+      const raw = image.getAttribute(APP_IMAGE_SOURCE) ?? '';
+      const path = safeImagePath(raw);
       image.removeAttribute(APP_IMAGE_SOURCE);
       if (!path) {
-        image.classList.add('is-missing');
+        markMissing(image, 'unsupported', raw.slice(0, 120));
         continue;
       }
 
@@ -421,9 +521,9 @@ export async function resolveImages(
         byPath.set(path.key, pending);
       }
       const resolved = await pending;
-      if (!shouldContinue()) return;
-      if (!resolved) {
-        image.classList.add('is-missing');
+      if (!shouldContinue() || resolved === null) return;
+      if (typeof resolved === 'string') {
+        markMissing(image, resolved, path.key);
         continue;
       }
 
@@ -437,8 +537,7 @@ export async function resolveImages(
             image.naturalHeight > MAX_RASTER_DIMENSION ||
             image.naturalWidth * image.naturalHeight > MAX_RASTER_PIXELS
           ) {
-            image.removeAttribute('src');
-            image.classList.add('is-missing');
+            markMissing(image, 'budget', path.key);
             return;
           }
           /* Approval is deliberately delayed until the browser has decoded the
@@ -448,7 +547,7 @@ export async function resolveImages(
             RASTER_PIXELS_ATTRIBUTE,
             String(resolved.width * resolved.height),
           );
-          image.classList.remove('is-missing');
+          clearMissing(image);
         },
         { once: true },
       );
@@ -457,8 +556,7 @@ export async function resolveImages(
         () => {
           image.removeAttribute(APPROVED_LOCAL_IMAGE);
           image.removeAttribute(RASTER_PIXELS_ATTRIBUTE);
-          image.removeAttribute('src');
-          image.classList.add('is-missing');
+          markMissing(image, 'decode', path.key);
         },
         { once: true },
       );
@@ -466,6 +564,9 @@ export async function resolveImages(
         image.width = resolved.width;
         image.height = resolved.height;
       }
+      /* Optimistic: the placeholder note must not flash while the blob
+         decodes. A failure re-marks the image from the error listener. */
+      clearMissing(image);
       image.src = resolved.url;
     }
   }
@@ -558,13 +659,26 @@ const HANDOFF = 'mdview:handoff-v2';
 const LEGACY_HANDOFF_TEXT = 'mdview:handoff';
 const LEGACY_HANDOFF_NAME = 'mdview:handoff-name';
 
+export type Handoff = {
+  name: string;
+  text: string;
+  size: number;
+  /** Set when the document was carried across an in-app navigation
+      (language switch, install guide) rather than freshly dropped. */
+  carried?: boolean;
+  /** Lets the reader reattach the file handle kept in the recent list. */
+  recentKey?: string;
+};
+
 export function stashHandoff(
   name: string,
   text: string,
   size = new Blob([text]).size,
+  extra: Pick<Handoff, 'carried' | 'recentKey'> = {},
 ): boolean {
   try {
-    sessionStorage.setItem(HANDOFF, JSON.stringify({ name, text, size }));
+    const payload: Handoff = { name, text, size, ...extra };
+    sessionStorage.setItem(HANDOFF, JSON.stringify(payload));
     sessionStorage.removeItem(LEGACY_HANDOFF_TEXT);
     sessionStorage.removeItem(LEGACY_HANDOFF_NAME);
     return true;
@@ -578,7 +692,7 @@ export function stashHandoff(
   }
 }
 
-export function takeHandoff(): { name: string; text: string; size: number } | null {
+export function takeHandoff(): Handoff | null {
   try {
     const payload = sessionStorage.getItem(HANDOFF);
     if (payload !== null) {
@@ -587,6 +701,8 @@ export function takeHandoff(): { name: string; text: string; size: number } | nu
         name?: unknown;
         text?: unknown;
         size?: unknown;
+        carried?: unknown;
+        recentKey?: unknown;
       };
       if (
         typeof parsed.name === 'string' &&
@@ -595,7 +711,12 @@ export function takeHandoff(): { name: string; text: string; size: number } | nu
         Number.isFinite(parsed.size) &&
         parsed.size >= 0
       ) {
-        return { name: parsed.name, text: parsed.text, size: parsed.size };
+        const handoff: Handoff = { name: parsed.name, text: parsed.text, size: parsed.size };
+        if (parsed.carried === true) handoff.carried = true;
+        if (typeof parsed.recentKey === 'string' && parsed.recentKey) {
+          handoff.recentKey = parsed.recentKey;
+        }
+        return handoff;
       }
       return null;
     }

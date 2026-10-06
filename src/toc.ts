@@ -1,3 +1,5 @@
+import { moveFocus } from './focus.ts';
+
 export type TocController = { destroy(): void; count: number };
 
 const MAX_TOC_HEADINGS = 500;
@@ -31,11 +33,7 @@ export function buildToc(doc: HTMLElement, list: HTMLElement): TocController {
       /* Preserve the state object — wiping it would erase the
          document marker the Back button relies on. */
       history.replaceState(history.state, '', `#${h.id}`);
-      if (!h.hasAttribute('tabindex')) {
-        h.tabIndex = -1;
-        h.addEventListener('blur', () => h.removeAttribute('tabindex'), { once: true });
-      }
-      h.focus({ preventScroll: true });
+      moveFocus(h);
       setActive(h.id);
     });
     list.appendChild(a);
