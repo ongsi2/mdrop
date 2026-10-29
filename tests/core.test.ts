@@ -11,6 +11,7 @@ import {
   TooComplexError,
   TooLargeError,
   readText,
+  resolveDrops,
   validateSourceText,
   watch,
   type Source,
@@ -24,6 +25,104 @@ import {
 } from '../src/image-policy.ts';
 import { validateMarkdownStructure } from '../src/markdown-budget.ts';
 import { inspectRaster, sniffRasterMime } from '../src/raster.ts';
+import { DocumentTabs } from '../src/tabs.ts';
+
+test('multiple dropped handles are captured immediately and one failed file does not discard the others', async () => {
+  const requested: string[] = [];
+  const transfer = {
+    items: ['first.md', 'broken.md', 'last.md'].map((name) => ({
+      kind: 'file',
+      getAsFileSystemHandle() {
+        requested.push(name);
+        return Promise.resolve({
+          kind: 'file', name,
+          async getFile() {
+            if (name === 'broken.md') throw new Error('file disappeared');
+            return new File(['# ' + name], name);
+          },
+        });
+      },
+    })),
+    files: [],
+  } as unknown as DataTransfer;
+  const pending = resolveDrops(transfer);
+  assert.deepEqual(requested, ['first.md', 'broken.md', 'last.md']);
+  const results = await pending;
+  assert.deepEqual(results.map((result) => result.status), ['fulfilled', 'rejected', 'fulfilled']);
+  assert.equal(results[2].status === 'fulfilled' && results[2].value?.name, 'last.md');
+});
+
+test('multiple fallback drop files survive the browser clearing its drag data', async () => {
+  let files = [new File(['# A'], 'a.md'), new File(['# B'], 'b.md')];
+  const transfer = { items: [], get files() { return files; } } as unknown as DataTransfer;
+  const pending = resolveDrops(transfer);
+  files = [];
+  const results = await pending;
+  assert.deepEqual(results.map((result) => result.status === 'fulfilled' && result.value?.name), ['a.md', 'b.md']);
+});
+
+test('tabs distinguish equal filenames by file identity and reuse reopened handles', async () => {
+  const makeHandle = (path: string) => ({
+    path,
+    async isSameEntry(other: { path: string }) { return path === other.path; },
+  }) as unknown as FileSystemFileHandle;
+  const source = (path: string): Source => ({
+    name: 'README.md', text: path, size: path.length, file: makeHandle(path),
+  });
+  const tabs = new DocumentTabs();
+  const first = tabs.add(source('first/README.md'));
+  tabs.add(source('second/README.md'));
+  assert.equal(await tabs.find(source('first/README.md')), first);
+  assert.equal(await tabs.find(source('third/README.md')), undefined);
+  assert.equal(tabs.entries.length, 2);
+});
+
+test('each tab retains its own position and linked-document history', () => {
+  const tabs = new DocumentTabs();
+  const first = tabs.add({ name: 'a.md', text: 'a', size: 1 });
+  const second = tabs.add({ name: 'b.md', text: 'b', size: 1 });
+  first.anchor = { id: 'section', offset: 120 };
+  first.visits.push({ source: { name: 'linked.md', text: 'link', size: 4 } });
+  first.visitIndex = 1;
+  tabs.select(first);
+  tabs.select(second);
+  tabs.select(first);
+  assert.deepEqual(tabs.active?.anchor, { id: 'section', offset: 120 });
+  assert.equal(tabs.active?.visits[1].source.name, 'linked.md');
+  assert.equal(tabs.active?.visitIndex, 1);
+  assert.equal(second.visits.length, 1);
+});
+
+test('closing inactive tabs keeps the active document and closing the last releases it', () => {
+  const tabs = new DocumentTabs();
+  const first = tabs.add({ name: 'a.md', text: 'a', size: 1 });
+  const second = tabs.add({ name: 'b.md', text: 'b', size: 1 });
+  const third = tabs.add({ name: 'c.md', text: 'c', size: 1 });
+  tabs.select(second);
+  tabs.remove(first);
+  assert.equal(tabs.active, second);
+  assert.equal(tabs.neighbor(second), third);
+  tabs.remove(second);
+  assert.equal(tabs.active, third);
+  tabs.remove(third);
+  assert.equal(tabs.active, null);
+  assert.equal(tabs.entries.length, 0);
+  tabs.select(second);
+  assert.equal(tabs.active, null);
+});
+
+test('unrelated pasted documents remain separate and failed identity checks are harmless', async () => {
+  const tabs = new DocumentTabs();
+  const first = { name: 'Pasted', text: 'same', size: 4 };
+  const pasted = tabs.add(first);
+  assert.equal(await tabs.find(first), pasted);
+  assert.equal(await tabs.find({ ...first }), undefined);
+  const broken = { isSameEntry: async () => { throw new Error('permission lost'); } } as unknown as FileSystemFileHandle;
+  tabs.add({ name: 'a.md', text: 'a', size: 1, file: broken });
+  assert.equal(await tabs.find({ name: 'b.md', text: 'b', size: 1, file: broken }), undefined);
+  tabs.clear();
+  assert.equal(tabs.entries.length, 0);
+});
 
 test('delimiter-looking prose is not stripped as frontmatter', () => {
   const source = '---\nthis is prose\n---\n# Kept';

@@ -131,14 +131,14 @@ export function validateSourceText(text: string, byteSize = new Blob([text]).siz
 
 }
 
-export async function pickFile(): Promise<Source | null> {
+export async function pickFiles(): Promise<FileSystemFileHandle[]> {
   const browser = window as unknown as {
     showOpenFilePicker?: (options: unknown) => Promise<FileSystemFileHandle[]>;
   };
-  if (!browser.showOpenFilePicker) return null;
+  if (!browser.showOpenFilePicker) return [];
 
-  const [handle] = await browser.showOpenFilePicker({
-    multiple: false,
+  return browser.showOpenFilePicker({
+    multiple: true,
     excludeAcceptAllOption: true,
     types: [
       {
@@ -147,7 +147,6 @@ export async function pickFile(): Promise<Source | null> {
       },
     ],
   });
-  return handle ? fromFileHandle(handle) : null;
 }
 
 export type FolderLocation = { root: FileSystemDirectoryHandle; dirPath: string[] };
@@ -200,34 +199,40 @@ export function readDropItems(dataTransfer: DataTransfer): Promise<unknown>[] {
   return pending;
 }
 
-export async function resolveDrop(dataTransfer: DataTransfer): Promise<Source | null> {
-  const settled = await Promise.allSettled(readDropItems(dataTransfer));
+export async function resolveDrops(dataTransfer: DataTransfer): Promise<PromiseSettledResult<Source | null>[]> {
+  // Capture both lists before the first await: the drag data is transient.
+  const pending = readDropItems(dataTransfer);
+  const fallbackFiles = Array.from(dataTransfer.files);
+  const settled = await Promise.allSettled(pending);
   const results = settled.flatMap((result) =>
     result.status === 'fulfilled' ? [result.value] : [],
   );
 
+  const sources: (() => Promise<Source | null>)[] = [];
   for (const result of results) {
     if (!result) continue;
     if (result instanceof File) {
-      if (isMarkdownName(result.name)) return fromFile(result);
+      if (isMarkdownName(result.name)) sources.push(() => fromFile(result));
       continue;
     }
 
     const handle = result as FileSystemHandle;
     if (handle.kind === 'file') {
       const file = handle as FileSystemFileHandle;
-      if (isMarkdownName(file.name)) return fromFileHandle(file);
+      if (isMarkdownName(file.name)) sources.push(() => fromFileHandle(file));
     } else if (handle.kind === 'directory') {
       const root = handle as FileSystemDirectoryHandle;
-      const found = await findMarkdownInDir(root);
-      if (found) return fromFileHandle(found.file, found.dir, { root, dirPath: found.dirPath });
+      sources.push(async () => {
+        const found = await findMarkdownInDir(root);
+        return found ? fromFileHandle(found.file, found.dir, { root, dirPath: found.dirPath }) : null;
+      });
     }
   }
 
-  for (const file of Array.from(dataTransfer.files)) {
-    if (isMarkdownName(file.name)) return fromFile(file);
+  if (!sources.length) for (const file of fallbackFiles) {
+    if (isMarkdownName(file.name)) sources.push(() => fromFile(file));
   }
-  return null;
+  return Promise.allSettled(sources.map((read) => read()));
 }
 
 type FoundMarkdown = {

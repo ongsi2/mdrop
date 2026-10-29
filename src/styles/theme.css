@@ -61,6 +61,8 @@
   --maxw: 1720px;
   --readw: 74ch;
   --topbar-h: 56px;
+  --tabs-h: 44px;
+  --reader-top: var(--topbar-h);
 
   --r-sm: 4px;
   --r-md: 8px;

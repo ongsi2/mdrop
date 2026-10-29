@@ -166,6 +166,9 @@
           더보기
         </button>
         <div class="topbar__secondary" id="more-menu" role="group" aria-label="도구 및 설정" data-open="false">
+          <button class="btn btn--ghost" id="btn-recent" type="button" popovertarget="recent-menu" aria-haspopup="dialog" hidden>
+            최근 문서
+          </button>
           <a class="langlink" id="lang-link" href="/en/" hreflang="en" lang="en">EN</a>
           <button
             class="btn btn--ghost"
@@ -212,6 +215,21 @@
         </button>
       </nav>
     </header>
+
+    <div class="tabbar" id="tabbar" hidden>
+      <div class="tabbar__list" id="tablist" role="tablist" aria-label="열어 둔 문서"></div>
+      <button class="tabbar__open" id="btn-tab-open" type="button" title="다른 파일 열기 (Ctrl+O)" aria-label="다른 파일 열기">+</button>
+    </div>
+
+    <section class="recent-menu" id="recent-menu" popover role="dialog" aria-labelledby="recent-menu-title" hidden>
+      <div class="recents__head">
+        <h2 class="recent-menu__title" id="recent-menu-title">최근 문서</h2>
+        <button class="btn btn--ghost" type="button" popovertarget="recent-menu" popovertargetaction="hide" aria-label="최근 문서 닫기">닫기</button>
+      </div>
+      <p class="recent-menu__empty" id="recent-menu-empty">파일을 열면 여기에 표시됩니다.</p>
+      <div class="recents__list" id="recent-menu-list"></div>
+      <button class="recents__clear" id="recent-menu-clear" type="button" hidden>목록 지우기</button>
+    </section>
 
     <main class="stage" id="stage">
       <!-- ── empty state ───────────────────────────────────────── -->
@@ -330,7 +348,7 @@
       </section>
 
       <!-- ── document view ─────────────────────────────────────── -->
-      <div class="reader" id="reader" hidden>
+      <div class="reader" id="reader" role="tabpanel" hidden>
         <aside class="toc" id="toc" hidden>
           <p class="toc__label">CONTENTS</p>
           <nav class="toc__list" id="toclist" aria-label="문서 목차"></nav>
@@ -362,7 +380,7 @@
     <div class="sr-only" id="alert" role="alert" aria-live="assertive" aria-atomic="true"></div>
     <div class="toast" id="toast" hidden></div>
 
-    <input type="file" id="fallback-input" accept=".md,.markdown,.mdown,.mkd,.mdwn" hidden />
+    <input type="file" id="fallback-input" accept=".md,.markdown,.mdown,.mkd,.mdwn" multiple hidden />
 
     <script type="module" src="/src/main.ts"></script>
   </body>

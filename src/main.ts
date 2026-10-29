@@ -27,8 +27,8 @@ import {
   fromFileHandle,
   isMarkdownName,
   resolveDocLink,
-  pickFile,
-  resolveDrop,
+  pickFiles,
+  resolveDrops,
   resolveImages,
   stashHandoff,
   supportsFsAccess,
@@ -52,6 +52,7 @@ import {
   type RecentEntry,
 } from './recent.ts';
 import { safeGet, safeSet } from './storage.ts';
+import { DocumentTabs, type DocumentTab, type ReadingAnchor as Anchor, type Visit } from './tabs.ts';
 
 /* A PWA has one manifest and therefore one start URL. Route only launches
    carrying our explicit marker; normal links and crawlers are never redirected. */
@@ -85,6 +86,10 @@ const announceEl = $('announce');
 const alertEl = $('alert');
 const fallbackInput = $<HTMLInputElement>('fallback-input');
 const skipLink = document.querySelector<HTMLAnchorElement>('.skip');
+const tabbar = $('tabbar');
+const tablist = $('tablist');
+const btnTabOpen = $<HTMLButtonElement>('btn-tab-open');
+const tabs = new DocumentTabs();
 
 const docMeta = $('docmeta');
 const docName = $('docname');
@@ -105,6 +110,15 @@ const themeLabel = $('theme-label');
 const recentBox = $('recents');
 const recentList = $('recent-list');
 const recentClear = $<HTMLButtonElement>('recent-clear');
+const btnRecent = $<HTMLButtonElement>('btn-recent');
+const recentMenu = $('recent-menu');
+const recentMenuList = $('recent-menu-list');
+const recentMenuEmpty = $('recent-menu-empty');
+const recentMenuClear = $<HTMLButtonElement>('recent-menu-clear');
+const supportsRecentMenu = typeof recentMenu.showPopover === 'function';
+const isRecentMenuOpen = () => supportsRecentMenu && recentMenu.matches(':popover-open');
+let pendingRecent: Promise<unknown> = Promise.resolve();
+let recentRenderEpoch = 0;
 
 let current: Source | null = null;
 let toc: TocController | null = null;
@@ -282,8 +296,6 @@ async function prepareDocument(
   return { root, urls };
 }
 
-type Anchor = { id: string; offset: number } | { y: number };
-
 function captureAnchor(): Anchor {
   let found: HTMLElement | null = null;
   for (const heading of doc.querySelectorAll<HTMLElement>('h1[id], h2[id], h3[id], h4[id]')) {
@@ -297,13 +309,14 @@ function captureAnchor(): Anchor {
 
 function restoreAnchor(anchor: Anchor): void {
   if ('y' in anchor) {
-    window.scrollTo({ top: anchor.y });
+    window.scrollTo({ top: anchor.y, behavior: 'instant' });
     return;
   }
   const element = doc.querySelector<HTMLElement>(`#${CSS.escape(anchor.id)}`);
   if (!element) return;
   window.scrollTo({
     top: window.scrollY + element.getBoundingClientRect().top - anchor.offset,
+    behavior: 'instant',
   });
 }
 
@@ -352,7 +365,7 @@ function commitDocument(
     restoreAnchor(options.anchor);
   } else {
     stage.scrollIntoView({ block: 'start' });
-    window.scrollTo({ top: 0 });
+    window.scrollTo({ top: 0, behavior: 'instant' });
   }
 
   if (options.focus) doc.focus({ preventScroll: true });
@@ -434,13 +447,102 @@ function startWatching(source: Source): void {
 /* Following a link to a sibling document pushes a history entry, so Back
    returns to the previous document at the previous position. Sources stay
    in memory only; nothing about them is written anywhere. */
-type Visit = { source: Source; anchor?: Anchor };
-type DocState = { mdviewDoc: true; visit: number };
+type DocState = { mdviewDoc: true; tab: number; visit: number };
 let visits: Visit[] = [];
 let visitIndex = -1;
 
 function docState(visit: number): DocState {
-  return { mdviewDoc: true, visit };
+  return { mdviewDoc: true, tab: tabs.active!.id, visit };
+}
+
+function saveActiveTab(): void {
+  if (!tabs.active || !current) return;
+  tabs.active.anchor = captureAnchor();
+  tabs.active.visits = visits;
+  tabs.active.visitIndex = visitIndex;
+}
+
+function revealActiveTab(): void {
+  const item = tablist.querySelector<HTMLElement>('.document-tab[data-active="true"]');
+  if (!item) return;
+  // Scroll only the tab strip; scrollIntoView would move the document too.
+  if (item.offsetLeft < tablist.scrollLeft) tablist.scrollLeft = item.offsetLeft;
+  else if (item.offsetLeft + item.offsetWidth > tablist.scrollLeft + tablist.clientWidth) {
+    tablist.scrollLeft = item.offsetLeft + item.offsetWidth - tablist.clientWidth;
+  }
+}
+
+function renderTabs(focusTab = false): void {
+  tabbar.hidden = tabs.entries.length === 0;
+  document.documentElement.dataset.tabs = tabbar.hidden ? 'closed' : 'open';
+  tablist.replaceChildren(...tabs.entries.map((tab) => {
+    const item = document.createElement('div');
+    item.className = 'document-tab';
+    item.setAttribute('role', 'presentation');
+    item.dataset.active = String(tab === tabs.active);
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'document-tab__select';
+    button.id = `document-tab-${tab.id}`;
+    button.setAttribute('role', 'tab');
+    button.setAttribute('aria-selected', String(tab === tabs.active));
+    button.setAttribute('aria-controls', 'reader');
+    button.tabIndex = tab === tabs.active ? 0 : -1;
+    button.textContent = tab.source.name;
+    button.title = tab.source.name;
+    button.addEventListener('click', () => void activateTab(tab));
+
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'document-tab__close';
+    close.textContent = '×';
+    close.tabIndex = -1;
+    close.title = t.closeTab(tab.source.name);
+    close.setAttribute('aria-label', close.title);
+    close.addEventListener('click', () => void closeTab(tab));
+    item.append(button, close);
+    return item;
+  }));
+
+  const active = tabs.active && $<HTMLButtonElement>(`document-tab-${tabs.active.id}`);
+  if (active) {
+    reader.setAttribute('aria-labelledby', active.id);
+    revealActiveTab();
+    if (focusTab) active.focus({ preventScroll: true });
+  } else reader.removeAttribute('aria-labelledby');
+}
+
+async function activateTab(tab: DocumentTab): Promise<void> {
+  if (!tabs.entries.includes(tab)) return;
+  if (tabs.active === tab) {
+    ++renderEpoch;
+    stopWatching();
+    startWatching(tab.source);
+    $(`document-tab-${tab.id}`).focus({ preventScroll: true });
+    return;
+  }
+  try {
+    await openSource(tab.source, null, null, { navigation: 'tab', tab, focusTab: true });
+  } catch (error) {
+    reportIntakeError(error);
+  }
+}
+
+async function closeTab(tab: DocumentTab): Promise<void> {
+  if (!tabs.entries.includes(tab)) return;
+  if (tabs.active === tab) {
+    const next = tabs.neighbor(tab);
+    if (!next) {
+      closeDocument();
+      history.replaceState(null, '', location.pathname + location.search);
+      return;
+    }
+    await activateTab(next);
+    if (tabs.active !== next) return;
+  }
+  tabs.remove(tab);
+  renderTabs(true);
 }
 
 type OpenOptions = {
@@ -449,7 +551,10 @@ type OpenOptions = {
   keepPosition?: boolean;
   /** `open` starts a fresh history chain, `follow` extends it by one entry,
       `back` re-renders an earlier entry the browser already returned to. */
-  navigation?: 'open' | 'follow' | 'back';
+  navigation?: 'open' | 'follow' | 'back' | 'tab';
+  tab?: DocumentTab;
+  focusTab?: boolean;
+  visitIndex?: number;
   anchor?: Anchor;
 };
 
@@ -466,6 +571,15 @@ async function openSource(
   if (previous?.file) liveBadge.hidden = true;
 
   const epoch = ++renderEpoch;
+  const navigation = options.navigation ?? 'open';
+  const target = options.tab ??
+    (options.keepPosition || navigation === 'follow' ? tabs.active : await tabs.find(source));
+  if (epoch !== renderEpoch) return;
+  if (target && !source.root && target.source.root) {
+    source.dir = target.source.dir;
+    source.root = target.source.root;
+    source.dirPath = target.source.dirPath;
+  }
   let prepared: PreparedDocument | null;
   try {
     prepared = await prepareDocument(source, source.text, epoch);
@@ -475,10 +589,22 @@ async function openSource(
   }
 
   if (!prepared || epoch !== renderEpoch) return;
-  const navigation = options.navigation ?? 'open';
+  if (target && !tabs.entries.includes(target)) {
+    revokeObjectUrls(prepared.urls);
+    if (previous?.file && current === previous) startWatching(previous);
+    return;
+  }
+  if (isRecentMenuOpen()) recentMenu.hidePopover();
+  saveActiveTab();
+  const anchor = options.keepPosition ? captureAnchor() :
+    options.anchor ?? (navigation === 'follow' ? undefined : target?.anchor);
+  const tab = target ?? tabs.add(source);
+  tabs.select(tab);
+  tab.source = source;
+  renderTabs();
   if (options.keepPosition) {
     commitDocument(source, source.text, prepared, {
-      anchor: captureAnchor(),
+      anchor,
       byteSize: source.size,
     });
   } else {
@@ -487,8 +613,8 @@ async function openSource(
         (document.activeElement instanceof HTMLElement ? document.activeElement : null);
     }
     commitDocument(source, source.text, prepared, {
-      focus: true,
-      anchor: options.anchor,
+      focus: !options.focusTab,
+      anchor,
       byteSize: source.size,
     });
   }
@@ -505,13 +631,23 @@ async function openSource(
     visitIndex = 0;
     if (history.state?.mdviewDoc) history.replaceState(docState(0), '', url);
     else history.pushState(docState(0), '', url);
+  } else {
+    visits = tab.visits;
+    visitIndex = options.visitIndex ?? tab.visitIndex;
+    if (navigation === 'tab') history.replaceState(docState(visitIndex), '', url);
   }
+  tab.visits = visits;
+  tab.visitIndex = visitIndex;
+  if (options.focusTab) $(`document-tab-${tab.id}`).focus({ preventScroll: true });
 
   if (source.file) {
+    const file = source.file;
     const folder = source.root ? { root: source.root, dirPath: source.dirPath ?? [] } : undefined;
-    void remember(source.name, source.file, source.dir, folder).then((key) => {
-      if (key && current === source) source.recentKey = key;
+    pendingRecent = pendingRecent.then(async () => {
+      const key = await remember(source.name, file, source.dir, folder);
+      if (key) source.recentKey = key;
     });
+    void renderRecents();
     startWatching(source);
   }
 }
@@ -618,6 +754,8 @@ function closeDocument(): void {
   current = null;
   visits = [];
   visitIndex = -1;
+  tabs.clear();
+  renderTabs();
   releaseObjectUrls();
   toc?.destroy();
   toc = null;
@@ -650,18 +788,17 @@ function closeDocument(): void {
 window.addEventListener('popstate', (event) => {
   const state = event.state as DocState | null;
   if (current && state?.mdviewDoc) {
-    const visit = visits[state.visit];
-    if (!visit) {
-      /* An entry from before a reload: its source is gone with the page. */
-      closeDocument();
-      history.replaceState(null, '', location.pathname + location.search);
+    const tab = tabs.entries.find((entry) => entry.id === state.tab);
+    const visit = tab?.visits[state.visit];
+    if (!tab || !visit) {
+      // A closed tab cannot be resurrected by an old browser-history entry.
+      history.replaceState(docState(visitIndex), '', location.pathname + location.search);
       return;
     }
     if (visit.source === current) return;
     const leaving = visits[visitIndex];
     if (leaving) leaving.anchor = captureAnchor();
-    visitIndex = state.visit;
-    void openSource(visit.source, null, null, { navigation: 'back', anchor: visit.anchor }).catch(
+    void openSource(visit.source, null, null, { navigation: 'back', tab, visitIndex: state.visit, anchor: visit.anchor }).catch(
       reportIntakeError,
     );
     return;
@@ -717,20 +854,24 @@ doc.addEventListener('click', (event) => {
 
 /* ── recent documents ─────────────────────────────────────── */
 async function renderRecents(): Promise<void> {
+  btnRecent.hidden = !canRemember() || !supportsRecentMenu;
+  recentMenu.hidden = btnRecent.hidden;
   if (!canRemember()) return;
+  const epoch = ++recentRenderEpoch;
+  await pendingRecent;
   const entries = await list();
+  if (epoch !== recentRenderEpoch) return;
   recentBox.hidden = entries.length === 0;
-  if (!entries.length) {
-    recentList.replaceChildren();
-    return;
-  }
+  recentMenuEmpty.hidden = entries.length > 0;
+  recentMenuClear.hidden = entries.length === 0;
 
-  recentList.replaceChildren(
+  for (const container of [recentList, recentMenuList]) container.replaceChildren(
     ...entries.map((entry) => {
       const chip = document.createElement('button');
       chip.type = 'button';
       chip.className = 'chip';
       chip.textContent = entry.name;
+      if (entry.key === current?.recentKey) chip.setAttribute('aria-current', 'true');
       chip.title = entry.dir ? t.recentFolderAccess(entry.name) : entry.name;
       if (entry.dir) chip.setAttribute('aria-label', t.recentFolderAccess(entry.name));
       chip.addEventListener('click', async () => {
@@ -751,7 +892,9 @@ async function renderRecents(): Promise<void> {
         }
 
         try {
-          await openSource(await fromFileHandle(entry.handle, dir, folder), chip, 'recent');
+          const source = await fromFileHandle(entry.handle, dir, folder);
+          source.recentKey = entry.key;
+          await openSource(source, container === recentMenuList ? btnRecent : chip, 'recent');
         } catch (error) {
           if (error instanceof TooLargeError || error instanceof TooComplexError) {
             reportIntakeError(error);
@@ -773,8 +916,13 @@ async function openViaPicker(trigger?: HTMLElement | null): Promise<void> {
     (document.activeElement instanceof HTMLElement ? document.activeElement : null);
   try {
     if (supportsFsAccess()) {
-      const source = await pickFile();
-      if (source) await openSource(source, pendingPickerTrigger, 'picker');
+      for (const handle of await pickFiles()) {
+        try {
+          await openSource(await fromFileHandle(handle), pendingPickerTrigger, 'picker');
+        } catch (error) {
+          reportIntakeError(error);
+        }
+      }
       return;
     }
     fallbackInput.click();
@@ -823,17 +971,18 @@ async function openSample(): Promise<void> {
 }
 
 fallbackInput.addEventListener('change', async () => {
-  const file = fallbackInput.files?.[0];
+  const files = Array.from(fallbackInput.files ?? []);
   fallbackInput.value = '';
-  if (!file) return;
-  if (!isMarkdownName(file.name)) {
-    toast(t.notMarkdown, 'error');
-    return;
-  }
-  try {
-    await openSource(await fromFile(file), pendingPickerTrigger, 'input');
-  } catch (error) {
-    reportIntakeError(error);
+  for (const file of files) {
+    if (!isMarkdownName(file.name)) {
+      toast(t.notMarkdown, 'error');
+      continue;
+    }
+    try {
+      await openSource(await fromFile(file), pendingPickerTrigger, 'input');
+    } catch (error) {
+      reportIntakeError(error);
+    }
   }
 });
 
@@ -863,12 +1012,23 @@ window.addEventListener('drop', async (event) => {
   dropzone.hidden = true;
 
   try {
-    const source = await resolveDrop(event.dataTransfer);
-    if (!source) {
-      toast(t.notMarkdown, 'error');
-      return;
+    const results = await resolveDrops(event.dataTransfer);
+    let recognized = false;
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        recognized = true;
+        reportIntakeError(result.reason);
+      } else if (result.value) {
+        recognized = true;
+        const source = result.value;
+        try {
+          await openSource(source, null, source.dir ? 'drop-folder' : 'drop-file');
+        } catch (error) {
+          reportIntakeError(error);
+        }
+      }
     }
-    await openSource(source, null, source.dir ? 'drop-folder' : 'drop-file');
+    if (!recognized) toast(t.notMarkdown, 'error');
   } catch (error) {
     if (error instanceof TooLargeError || error instanceof TooComplexError) {
       reportIntakeError(error);
@@ -919,12 +1079,12 @@ const launch = (
 ).launchQueue;
 
 launch?.setConsumer(async (params) => {
-  const handle = params.files?.[0];
-  if (!handle) return;
-  try {
-    await openSource(await fromFileHandle(handle), null, 'launch');
-  } catch (error) {
-    reportIntakeError(error);
+  for (const handle of params.files ?? []) {
+    try {
+      await openSource(await fromFileHandle(handle), null, 'launch');
+    } catch (error) {
+      reportIntakeError(error);
+    }
   }
 });
 
@@ -977,6 +1137,27 @@ window.addEventListener('appinstalled', () => {
 
 /* ── controls ─────────────────────────────────────────────── */
 btnOpen.addEventListener('click', () => void openViaPicker(btnOpen));
+btnTabOpen.addEventListener('click', () => void openViaPicker(btnTabOpen));
+new ResizeObserver(revealActiveTab).observe(tablist);
+tablist.addEventListener('keydown', (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLElement>('[role="tab"]');
+  if (!button || !tabs.active) return;
+  const index = tabs.entries.findIndex((tab) => button.id === `document-tab-${tab.id}`);
+  let next: DocumentTab | undefined;
+  if (event.key === 'ArrowRight') next = tabs.entries[(index + 1) % tabs.entries.length];
+  else if (event.key === 'ArrowLeft') next = tabs.entries[(index - 1 + tabs.entries.length) % tabs.entries.length];
+  else if (event.key === 'Home') next = tabs.entries[0];
+  else if (event.key === 'End') next = tabs.entries.at(-1);
+  else if (event.key === 'Delete') {
+    event.preventDefault();
+    void closeTab(tabs.entries[index]);
+    return;
+  }
+  if (next) {
+    event.preventDefault();
+    void activateTab(next);
+  }
+});
 btnSample.addEventListener('click', () => void openSample());
 dropcard.addEventListener('click', () => void openViaPicker(dropcard));
 dropcard.addEventListener('keydown', (event) => {
@@ -994,7 +1175,9 @@ moreMenu.addEventListener('click', (event) => {
   if (!(event.target as HTMLElement).closest('button')) return;
   const wasOpen = moreMenu.dataset.open === 'true';
   setMoreOpen(false);
-  if (wasOpen) window.requestAnimationFrame(() => btnMore.focus());
+  if (wasOpen && !(event.target as HTMLElement).closest('#btn-recent')) {
+    window.requestAnimationFrame(() => btnMore.focus());
+  }
 });
 document.addEventListener('pointerdown', (event) => {
   if (moreMenu.dataset.open !== 'true') return;
@@ -1030,10 +1213,20 @@ btnCopy.addEventListener('click', async () => {
   }
 });
 
-recentClear.addEventListener('click', async () => {
+recentMenu.addEventListener('beforetoggle', (event) => {
+  if ((event as ToggleEvent).newState === 'open') void renderRecents();
+});
+
+async function clearRecentDocuments(): Promise<void> {
+  await pendingRecent;
   await clearRecent();
   await renderRecents();
-});
+  if (isRecentMenuOpen()) {
+    recentMenu.querySelector<HTMLButtonElement>('[popovertargetaction="hide"]')?.focus();
+  }
+}
+recentClear.addEventListener('click', () => void clearRecentDocuments());
+recentMenuClear.addEventListener('click', () => void clearRecentDocuments());
 
 /* Any navigation away (language switch, install guide, reload, the wordmark)
    parks the open document. A page restored from the back-forward cache still
@@ -1085,13 +1278,14 @@ document.addEventListener('keydown', (event) => {
   }
 
   if (event.key === 'Escape') {
+    // Let the native popover dismiss without closing the document underneath.
+    if (isRecentMenuOpen()) return;
     if (moreMenu.dataset.open === 'true') {
       event.preventDefault();
       setMoreOpen(false);
       btnMore.focus();
-    } else if (current) {
-      /* Leave the whole chain of linked documents, not just the last one. */
-      history.go(-Math.max(1, visitIndex + 1));
+    } else if (tabs.active) {
+      void closeTab(tabs.active);
     }
     return;
   }

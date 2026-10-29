@@ -166,6 +166,9 @@
           More
         </button>
         <div class="topbar__secondary" id="more-menu" role="group" aria-label="Tools and settings" data-open="false">
+          <button class="btn btn--ghost" id="btn-recent" type="button" popovertarget="recent-menu" aria-haspopup="dialog" hidden>
+            Recent
+          </button>
           <a class="langlink" id="lang-link" href="/" hreflang="ko" lang="ko">한국어</a>
           <button
             class="btn btn--ghost"
@@ -212,6 +215,21 @@
         </button>
       </nav>
     </header>
+
+    <div class="tabbar" id="tabbar" hidden>
+      <div class="tabbar__list" id="tablist" role="tablist" aria-label="Open documents"></div>
+      <button class="tabbar__open" id="btn-tab-open" type="button" title="Open another file (Ctrl+O)" aria-label="Open another file">+</button>
+    </div>
+
+    <section class="recent-menu" id="recent-menu" popover role="dialog" aria-labelledby="recent-menu-title" hidden>
+      <div class="recents__head">
+        <h2 class="recent-menu__title" id="recent-menu-title">Recent documents</h2>
+        <button class="btn btn--ghost" type="button" popovertarget="recent-menu" popovertargetaction="hide" aria-label="Close recent documents">Close</button>
+      </div>
+      <p class="recent-menu__empty" id="recent-menu-empty">Files you open will appear here.</p>
+      <div class="recents__list" id="recent-menu-list"></div>
+      <button class="recents__clear" id="recent-menu-clear" type="button" hidden>Clear list</button>
+    </section>
 
     <main class="stage" id="stage">
       <!-- ── empty state ───────────────────────────────────────── -->
@@ -325,7 +343,7 @@
       </section>
 
       <!-- ── document view ─────────────────────────────────────── -->
-      <div class="reader" id="reader" hidden>
+      <div class="reader" id="reader" role="tabpanel" hidden>
         <aside class="toc" id="toc" hidden>
           <p class="toc__label">CONTENTS</p>
           <nav class="toc__list" id="toclist" aria-label="Document contents"></nav>
@@ -356,7 +374,7 @@
     <div class="sr-only" id="alert" role="alert" aria-live="assertive" aria-atomic="true"></div>
     <div class="toast" id="toast" hidden></div>
 
-    <input type="file" id="fallback-input" accept=".md,.markdown,.mdown,.mkd,.mdwn" hidden />
+    <input type="file" id="fallback-input" accept=".md,.markdown,.mdown,.mkd,.mdwn" multiple hidden />
 
     <script type="module" src="/src/main.ts"></script>
   </body>
